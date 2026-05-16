@@ -224,3 +224,11 @@ __marimo__/
 .venv
 
 .idea/
+
+# Test artifacts
+test_http_server.py
+test_response.json
+response.json
+
+# Docker volumes
+models/
