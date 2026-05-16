@@ -2,7 +2,7 @@
 
 > **💰 NO PAID SERVICES REQUIRED**: This deployment runs completely locally on your infrastructure. No external APIs, no metered services, no recurring costs beyond your own hosting. See [NO_PAID_SERVICES.md](NO_PAID_SERVICES.md) for details.
 
-> **📦 MODEL DOWNLOAD**: The ~20GB Chandra model is downloaded from HuggingFace on first startup (5-15 minutes). It's cached locally for subsequent runs. See [MODEL_DOWNLOAD.md](MODEL_DOWNLOAD.md) for details.
+> **📦 MODEL PRE-CACHED**: The ~20GB Chandra model is now downloaded during Docker build and included in the image. First build takes 15-25 minutes, but startup is then instant (2-3 minutes). See [WHAT_DOWNLOADS.md](WHAT_DOWNLOADS.md) for details.
 
 This guide explains how to deploy Chandra OCR as a containerized HTTP API service that accepts file uploads.
 
@@ -14,13 +14,18 @@ This guide explains how to deploy Chandra OCR as a containerized HTTP API servic
 - Docker Compose (version 2.0 or higher)
 - NVIDIA GPU with CUDA support (for vLLM mode)
 - NVIDIA Container Toolkit (for GPU access in Docker)
+- **90GB free disk space** (for building images with cached models)
+- **Internet connection** (for initial build to download model)
 
-### Option 1: Using Docker Compose with vLLM (Recommended for Production)
+### Build and Deploy
 
-This setup runs a vLLM server for optimized inference and the Chandra HTTP API.
+This deployment pre-caches the model in the Docker images for instant startup:
 
 ```bash
-# Start both vLLM server and Chandra API
+# Build images (downloads model during build, takes 15-25 minutes first time)
+docker-compose build
+
+# Start services (startup is now fast: 2-3 minutes)
 docker-compose up -d
 
 # Check logs
@@ -31,6 +36,22 @@ docker-compose down
 ```
 
 The API will be available at `http://localhost:5000`
+
+### Build Process
+
+**First time build** (15-25 minutes):
+1. Downloads base Docker images (Python, vLLM)
+2. Installs Python dependencies
+3. **Downloads Chandra model from HuggingFace (~20GB)**
+4. Caches model in both images
+5. Images are ready for instant deployment
+
+**Subsequent starts** (2-3 minutes):
+1. Containers start
+2. Load pre-cached model from image into memory
+3. Ready to process requests
+
+No downloads happen after the initial build!
 
 ### Option 2: Using Docker with HuggingFace Backend
 

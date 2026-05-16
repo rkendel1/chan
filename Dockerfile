@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
@@ -26,6 +27,12 @@ RUN uv pip install --system --no-cache -e .
 
 # Install Flask for HTTP server (from dev dependencies)
 RUN pip install --no-cache-dir flask
+
+# Pre-download the model during build to cache it in the image
+# This adds ~20GB to the image but makes startup immediate
+RUN pip install --no-cache-dir huggingface-hub && \
+    huggingface-cli download datalab-to/chandra-ocr-2 && \
+    echo "Model cached successfully in image"
 
 # Copy application code
 COPY chandra/ ./chandra/

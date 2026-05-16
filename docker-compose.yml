@@ -1,18 +1,19 @@
 version: '3.8'
 
 services:
-  # vLLM server for optimized inference
+  # vLLM server for optimized inference with pre-cached model
   vllm-server:
-    image: vllm/vllm-openai:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.vllm
+    image: chandra-vllm:cached
     container_name: chandra-vllm
     ports:
       - "8000:8000"
     environment:
       - VLLM_MODEL_NAME=chandra
-    volumes:
-      # Cache models locally to avoid re-downloading on restart (~20GB)
-      # Model is downloaded from HuggingFace on first startup (5-15 minutes)
-      - ./models:/root/.cache/huggingface
+    # Model is pre-cached in the image (~20GB included in build)
+    # No volume mount needed - startup is immediate
     command: >
       --model datalab-to/chandra-ocr-2
       --served-model-name chandra
@@ -32,13 +33,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 900s  # 15 minutes to allow for model download on first startup
+      start_period: 120s  # 2 minutes to load pre-cached model into memory
 
-  # Chandra OCR HTTP API
+  # Chandra OCR HTTP API with pre-cached model
   chandra-api:
     build:
       context: .
       dockerfile: Dockerfile
+    image: chandra-api:cached
     container_name: chandra-api
     ports:
       - "5000:5000"
@@ -52,6 +54,7 @@ services:
       vllm-server:
         condition: service_healthy
     restart: unless-stopped
+    # Model is pre-cached in the image - no download needed
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s

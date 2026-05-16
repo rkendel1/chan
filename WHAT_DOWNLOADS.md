@@ -2,87 +2,156 @@
 
 ## Short Answer
 
-**NO** - The Docker image does NOT include everything. The ~20GB model is downloaded from HuggingFace on first startup.
+**YES** - The Docker images NOW include the model! The ~20GB model is pre-downloaded during the Docker build process.
 
-## What's Included in Docker Image
+## What's Included in Docker Images
 
-✅ **Included during build** (~5GB total):
+✅ **Included during build** (~25GB total per image):
 - Python runtime
 - All Python packages (Flask, transformers, pypdfium2, etc.)
 - Application code
 - System dependencies (gcc, git, etc.)
+- **Chandra OCR model (~20GB) - PRE-CACHED** ⭐
 
 ## What Downloads at Runtime
 
-⏰ **Downloaded on first startup** (~20GB, takes 5-15 minutes):
-- Chandra OCR model weights
-- Tokenizer files
-- Model configuration
+✅ **Nothing!** The model is already in the image.
 
-**Source**: HuggingFace Hub (`datalab-to/chandra-ocr-2`)
+## Why Include Model in Image?
 
-## Why Not Include Model in Image?
+This deployment now uses **Option 1: Model Pre-Cached in Image**
 
-1. **Size**: Would make Docker image ~25GB (slow to build/push/pull)
-2. **Flexibility**: Can easily switch model versions
-3. **Updates**: Can update model without rebuilding image
-4. **Standard practice**: Most ML Docker images work this way
+**Advantages:**
+1. ✅ **Instant startup** - No waiting for downloads
+2. ✅ **Predictable deployment** - Same image = same model
+3. ✅ **Works offline** - No internet required after build
+4. ✅ **Simpler deployment** - Just run, no volume configuration
 
-## How to Avoid Re-downloading
+**Trade-offs:**
+1. ⚠️ Large image size (~25GB per service)
+2. ⚠️ Longer build time (15-20 minutes first build)
+3. ⚠️ Requires internet during build (to download model)
 
-The `docker-compose.yml` includes a volume mount:
-```yaml
-volumes:
-  - ./models:/root/.cache/huggingface
+## Build Process
+
+### First Time Build
 ```
-
-This caches the model in the `./models` directory on your host:
-- ✅ First startup: Downloads model (~20GB, 5-15 min)
-- ✅ Subsequent startups: Uses cached model (instant)
-- ✅ Persists across container restarts
-
-## Timeline
-
-### First Time
-```
-docker-compose up
+docker-compose build
   ↓
-1. Pulls Docker images (5GB) - 2-5 minutes
-2. Starts containers - 10 seconds
-3. Downloads model from HuggingFace (20GB) - 5-15 minutes
-4. Loads model into memory - 1-2 minutes
-5. Ready to accept requests ✅
+1. Pulls base images (Python, vLLM) - 2-5 minutes
+2. Installs dependencies - 2-3 minutes
+3. Downloads Chandra model (~20GB) - 10-15 minutes ⏱️
+4. Caches model in image - 1 minute
+5. Build complete ✅
 ```
 
-**Total first startup: 10-25 minutes**
+**Total first build: 15-25 minutes**
 
-### Subsequent Startups (with volume mount)
+### Startup After Build
 ```
 docker-compose up
   ↓
 1. Starts containers - 10 seconds
-2. Loads cached model into memory - 1-2 minutes
+2. Loads pre-cached model into memory - 1-2 minutes
 3. Ready to accept requests ✅
 ```
 
-**Total: 2-3 minutes**
+**Total startup: 2-3 minutes**
 
 ## Storage Requirements
 
 Make sure you have:
-- **Docker images**: 5GB
-- **Model cache**: 25GB
-- **Working space**: 5GB
-- **Total**: 35GB free disk space
+- **Docker build cache**: 30GB
+- **Final images**: 50GB (25GB × 2 services)
+- **Working space**: 10GB
+- **Total**: 90GB free disk space
 
-## Internet Requirements
+## Network Requirements
 
-- **Required**: First startup (to download model)
-- **Not required**: After model is cached
+- **Required**: During Docker build (to download model from HuggingFace)
+- **Not required**: After build or during runtime
 - **Download speed**: Varies (typically 50-200 MB/s from HuggingFace CDN)
 
-## Bottom Line
+## Build Commands
 
-**The container downloads the model (~20GB) from HuggingFace on first startup**, but it's cached locally so you don't download it again. Everything else (Python packages, code) is included in the Docker image.
+### Initial Build (with model download)
+```bash
+# Build both images with cached models
+docker-compose build
 
-See [MODEL_DOWNLOAD.md](MODEL_DOWNLOAD.md) for detailed information about model downloads and caching.
+# This downloads and caches the model in both images
+# Takes 15-25 minutes on first build
+```
+
+### Quick Start
+```bash
+# Build images (first time: 15-25 min, includes model download)
+docker-compose build
+
+# Start services (startup: 2-3 min, model already cached)
+docker-compose up -d
+
+# Ready to use!
+curl http://localhost:5000/health
+```
+
+## Monitoring Build Progress
+
+```bash
+# Watch build progress
+docker-compose build --progress=plain
+
+# You'll see:
+# - Installing dependencies...
+# - Downloading datalab-to/chandra-ocr-2...
+# - Model cached successfully in image ✅
+```
+
+## Image Sizes
+
+After build:
+```bash
+docker images | grep chandra
+
+# chandra-api:cached    25GB
+# chandra-vllm:cached   25GB
+```
+
+## Offline Usage
+
+Once built, images work completely offline:
+- ✅ No internet required to start
+- ✅ No downloads during startup
+- ✅ Model is already in the image
+- ✅ Can deploy to air-gapped environments
+
+## Comparison: Old vs New
+
+### Old Approach (Runtime Download)
+```
+✗ First startup: 10-25 minutes
+✗ Requires internet on every fresh deploy
+✗ Unpredictable (depends on network)
+✓ Smaller images (5GB)
+```
+
+### New Approach (Pre-Cached)
+```
+✓ First startup: 2-3 minutes
+✓ Works offline after build
+✓ Predictable performance
+✗ Larger images (25GB)
+✗ Longer build time (once)
+```
+
+## Summary
+
+✅ **Model is now included** - Pre-downloaded during Docker build  
+✅ **Instant startup** - No waiting for downloads  
+✅ **Works offline** - After initial build  
+⚠️ **Large images** - 25GB per service  
+⚠️ **Longer build** - 15-25 minutes (one time)  
+
+**Recommendation**: The pre-cached approach is better for production deployments where fast, predictable startup is more important than image size.
+
+See [MODEL_DOWNLOAD.md](MODEL_DOWNLOAD.md) for more details about the caching mechanism.

@@ -1,0 +1,11 @@
+# Dockerfile for vLLM server with pre-cached Chandra model
+FROM vllm/vllm-openai:latest
+
+# Pre-download the Chandra model during build
+# This adds ~20GB to the image but makes startup immediate
+RUN pip install --no-cache-dir huggingface-hub && \
+    huggingface-cli download datalab-to/chandra-ocr-2 && \
+    echo "Chandra model cached in vLLM image"
+
+# The model is now cached at /root/.cache/huggingface/
+# vLLM will use this cache instead of downloading on startup

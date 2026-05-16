@@ -75,7 +75,10 @@ chandra_app
 Deploy Chandra as an HTTP API service that accepts file uploads:
 
 ```shell
-# Start with Docker Compose (includes vLLM server)
+# Build images (downloads model during build, 15-25 min first time)
+docker-compose build
+
+# Start services (fast startup with pre-cached model, 2-3 min)
 docker-compose up -d
 
 # Test the API
@@ -87,6 +90,8 @@ curl -X POST http://localhost:5000/process \
   -F "file=@image.png" \
   | python -m json.tool
 ```
+
+The ~20GB model is pre-cached during Docker build for instant deployments.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions and [TESTING.md](TESTING.md) for API testing examples.
 
