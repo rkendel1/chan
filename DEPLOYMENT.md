@@ -1,5 +1,7 @@
 # Chandra OCR - Docker Deployment Guide
 
+> **💰 NO PAID SERVICES REQUIRED**: This deployment runs completely locally on your infrastructure. No external APIs, no metered services, no recurring costs beyond your own hosting. See [NO_PAID_SERVICES.md](NO_PAID_SERVICES.md) for details.
+
 This guide explains how to deploy Chandra OCR as a containerized HTTP API service that accepts file uploads.
 
 ## Quick Start

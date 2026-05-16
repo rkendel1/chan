@@ -9,7 +9,7 @@ cat << EOF
 ╔════════════════════════════════════════════════════════════════╗
 ║          Chandra OCR API - Quick Curl Reference                ║
 ║                                                                ║
-║  API URL: $API_URL                                             
+║  API URL: $API_URL
 ╚════════════════════════════════════════════════════════════════╝
 
 1. HEALTH CHECK

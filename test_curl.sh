@@ -51,7 +51,7 @@ img = Image.new('RGB', (800, 400), color='white')
 draw = ImageDraw.Draw(img)
 try:
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 30)
-except:
+except (OSError, IOError):
     font = ImageFont.load_default()
 draw.text((50, 50), "Test Document", fill='black', font=font)
 draw.text((50, 150), "This is a test for Chandra OCR", fill='black', font=font)

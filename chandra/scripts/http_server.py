@@ -177,8 +177,7 @@ def process_file():
     
     except Exception as e:
         # Log the error internally but don't expose stack trace to user
-        import logging
-        logging.error(f"Error processing file: {str(e)}", exc_info=True)
+        logger.error(f"Error processing file: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
             'error': 'An error occurred while processing the file. Please check the file format and try again.'

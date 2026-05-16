@@ -25,7 +25,7 @@ def create_test_image():
     try:
         # Try to use a default font
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 40)
-    except:
+    except (OSError, IOError):
         # Fallback to default font
         font = ImageFont.load_default()
     
