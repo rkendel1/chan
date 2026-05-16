@@ -2,6 +2,8 @@
 
 > **💰 NO PAID SERVICES REQUIRED**: This deployment runs completely locally on your infrastructure. No external APIs, no metered services, no recurring costs beyond your own hosting. See [NO_PAID_SERVICES.md](NO_PAID_SERVICES.md) for details.
 
+> **📦 MODEL DOWNLOAD**: The ~20GB Chandra model is downloaded from HuggingFace on first startup (5-15 minutes). It's cached locally for subsequent runs. See [MODEL_DOWNLOAD.md](MODEL_DOWNLOAD.md) for details.
+
 This guide explains how to deploy Chandra OCR as a containerized HTTP API service that accepts file uploads.
 
 ## Quick Start
