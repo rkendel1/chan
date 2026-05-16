@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# GitHub
+.github/
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache/
+
+# Documentation
+*.md
+!README.md
+assets/
+
+# CI/CD
+.pre-commit-config.yaml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Models cache (will be mounted as volume)
+models/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

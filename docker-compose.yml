@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # vLLM server for optimized inference
+  vllm-server:
+    image: vllm/vllm-openai:latest
+    container_name: chandra-vllm
+    ports:
+      - "8000:8000"
+    environment:
+      - VLLM_MODEL_NAME=chandra
+    volumes:
+      - ./models:/root/.cache/huggingface
+    command: >
+      --model datalab-to/chandra-ocr-2
+      --served-model-name chandra
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len 16384
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Chandra OCR HTTP API
+  chandra-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chandra-api
+    ports:
+      - "5000:5000"
+    environment:
+      - INFERENCE_METHOD=vllm
+      - VLLM_API_BASE=http://vllm-server:8000/v1
+      - VLLM_MODEL_NAME=chandra
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=5000
+    depends_on:
+      vllm-server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Alternative: Chandra API with HuggingFace backend (no GPU required for API, but slower)
+  chandra-api-hf:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chandra-api-hf
+    ports:
+      - "5001:5000"
+    environment:
+      - INFERENCE_METHOD=hf
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=5000
+    restart: unless-stopped
+    profiles:
+      - hf
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
