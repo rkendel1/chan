@@ -118,14 +118,14 @@ print('Model downloaded successfully')
 "
 ```
 
-### Option 2: Using huggingface-cli
+### Option 2: Using HuggingFace CLI
 
 ```bash
 # Install HuggingFace CLI
 pip install huggingface-hub
 
 # Download model
-huggingface-cli download datalab-to/chandra-ocr-2
+hf download datalab-to/chandra-ocr-2
 ```
 
 ### Option 3: Manual Download to Volume
