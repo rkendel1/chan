@@ -3,8 +3,10 @@ HTTP server for Chandra OCR that accepts file uploads via POST requests.
 Processes images and PDFs and returns OCR results as JSON.
 """
 import io
+import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -17,14 +19,19 @@ from chandra.model.schema import BatchInputItem
 
 app = Flask(__name__)
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Configure upload settings
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp'}
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
-# Global model instance
+# Global model instance with thread lock for initialization
 model: Optional[InferenceManager] = None
+model_lock = threading.Lock()
 
 
 def allowed_file(filename: str) -> bool:
@@ -33,15 +40,18 @@ def allowed_file(filename: str) -> bool:
 
 
 def initialize_model(method: str = None):
-    """Initialize the inference model."""
+    """Initialize the inference model with thread safety."""
     global model
-    if model is None:
-        # Get method from environment or default to vllm
-        if method is None:
-            method = os.environ.get('INFERENCE_METHOD', 'vllm')
-        print(f"Initializing model with method: {method}")
-        model = InferenceManager(method=method)
-        print("Model initialized successfully")
+    
+    # Use lock to ensure thread-safe initialization
+    with model_lock:
+        if model is None:
+            # Get method from environment or default to vllm
+            if method is None:
+                method = os.environ.get('INFERENCE_METHOD', 'vllm')
+            logger.info(f"Initializing model with method: {method}")
+            model = InferenceManager(method=method)
+            logger.info("Model initialized successfully")
     return model
 
 
@@ -94,8 +104,18 @@ def process_file():
         if max_output_tokens:
             max_output_tokens = int(max_output_tokens)
         
-        # Save file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp_file:
+        # Sanitize filename to prevent path traversal
+        safe_name = secure_filename(file.filename)
+        file_extension = Path(safe_name).suffix.lower()
+        
+        # Verify the extension is in allowed list (additional security check)
+        if file_extension not in ALLOWED_EXTENSIONS:
+            return jsonify({
+                'error': f'File type not allowed. Supported types: {", ".join(ALLOWED_EXTENSIONS)}'
+            }), 400
+        
+        # Save file to temporary location with sanitized extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
             file.save(tmp_file.name)
             tmp_filepath = tmp_file.name
         
@@ -156,9 +176,12 @@ def process_file():
                 os.unlink(tmp_filepath)
     
     except Exception as e:
+        # Log the error internally but don't expose stack trace to user
+        import logging
+        logging.error(f"Error processing file: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'An error occurred while processing the file. Please check the file format and try again.'
         }), 500
 
 
@@ -187,13 +210,13 @@ def main():
     method = os.environ.get('INFERENCE_METHOD', 'vllm')
     
     # Initialize model before starting server
-    print("Starting Chandra OCR HTTP Server...")
+    logger.info("Starting Chandra OCR HTTP Server...")
     initialize_model(method)
     
-    print(f"Server starting on {host}:{port}")
-    print(f"Inference method: {method}")
-    print(f"Supported file types: {', '.join(ALLOWED_EXTENSIONS)}")
-    print(f"Max file size: {MAX_CONTENT_LENGTH / (1024 * 1024):.1f}MB")
+    logger.info(f"Server starting on {host}:{port}")
+    logger.info(f"Inference method: {method}")
+    logger.info(f"Supported file types: {', '.join(ALLOWED_EXTENSIONS)}")
+    logger.info(f"Max file size: {MAX_CONTENT_LENGTH / (1024 * 1024):.1f}MB")
     
     app.run(host=host, port=port, debug=debug)
 

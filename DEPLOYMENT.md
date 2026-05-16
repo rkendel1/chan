@@ -123,7 +123,7 @@ Response:
 | `page_range` | string | all pages | Page range for PDFs (e.g., "1-5,7,9-12") |
 | `include_images` | boolean | true | Extract and include image metadata |
 | `include_headers_footers` | boolean | false | Include page headers and footers |
-| `max_output_tokens` | integer | default | Maximum output tokens per page |
+| `max_output_tokens` | integer | 12384 | Maximum output tokens per page |
 
 ### Supported File Formats
 
@@ -151,7 +151,7 @@ Response:
 |----------|---------|-------------|
 | `INFERENCE_METHOD` | vllm | Inference method (vllm or hf) |
 | `MODEL_CHECKPOINT` | datalab-to/chandra-ocr-2 | Model checkpoint |
-| `MAX_OUTPUT_TOKENS` | 12384 | Maximum output tokens |
+| `MAX_OUTPUT_TOKENS` | 12384 | Maximum output tokens per page |
 
 ### vLLM Configuration (when using vLLM method)
 
