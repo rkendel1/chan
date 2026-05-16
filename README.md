@@ -70,6 +70,31 @@ pip install chandra-ocr[app]
 chandra_app
 ```
 
+### Docker Deployment
+
+Deploy Chandra as an HTTP API service that accepts file uploads:
+
+```shell
+# Build images (downloads model during build, 15-25 min first time)
+docker-compose build
+
+# Start services (fast startup with pre-cached model, 2-3 min)
+docker-compose up -d
+
+# Test the API
+curl -X POST http://localhost:5000/process \
+  -F "file=@document.pdf"
+
+# Or process an image
+curl -X POST http://localhost:5000/process \
+  -F "file=@image.png" \
+  | python -m json.tool
+```
+
+The ~20GB model is pre-cached during Docker build for instant deployments.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions and [TESTING.md](TESTING.md) for API testing examples.
+
 ## Benchmarks
 
 Multilingual performance was a focus for us with Chandra 2.  There isn't a good public multilingual OCR benchmark, so we made our own.  This tests tables, math, ordering, layout, and text accuracy.
