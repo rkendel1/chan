@@ -8,80 +8,114 @@ This guide explains how to deploy Chandra OCR as a containerized HTTP API servic
 
 ## Quick Start
 
-### Prerequisites
+### Prerequisites (CPU Mode - Default)
 
 - Docker (version 20.10 or higher)
 - Docker Compose (version 2.0 or higher)
-- NVIDIA GPU with CUDA support (for vLLM mode)
-- NVIDIA Container Toolkit (for GPU access in Docker)
-- **90GB free disk space** (for building images with cached models)
+- **25GB free disk space** (for building image with cached model)
 - **Internet connection** (for initial build to download model)
 
-### Build and Deploy
+### Prerequisites (GPU Mode - Optional)
 
-This deployment pre-caches the model in the Docker images for instant startup:
+In addition to the above:
+- NVIDIA GPU with CUDA support
+- NVIDIA Container Toolkit (for GPU access in Docker)
+- **50GB free disk space** (for building both images with cached models)
+
+### Build and Deploy (CPU Mode - Default)
+
+This is the recommended mode if you don't have a GPU or encounter GPU driver errors:
 
 ```bash
-# Build images (downloads model during build, takes 15-25 minutes first time)
+# Build image (downloads model during build, takes 15-25 minutes first time)
 docker-compose build
 
-# Start services (startup is now fast: 2-3 minutes)
+# Start service (CPU mode, no GPU required)
 docker-compose up -d
 
 # Check logs
 docker-compose logs -f chandra-api
 
-# Stop services
+# Stop service
 docker-compose down
 ```
 
 The API will be available at `http://localhost:5000`
 
+**Note:** CPU mode uses the HuggingFace backend which is slower than GPU mode but doesn't require NVIDIA drivers.
+
+### Build and Deploy (GPU Mode - Optional)
+
+If you have an NVIDIA GPU and properly configured drivers:
+
+```bash
+# Build images (downloads model during build, takes 15-25 minutes first time)
+docker-compose build
+
+# Start services with GPU profile
+docker-compose --profile gpu up -d
+
+# Check logs
+docker-compose --profile gpu logs -f chandra-api-gpu
+
+# Stop services
+docker-compose --profile gpu down
+```
+
+The API will be available at `http://localhost:5000`
+
+**Note:** GPU mode uses vLLM for much faster inference but requires NVIDIA Container Toolkit.
+
 ### Build Process
 
-**First time build** (15-25 minutes):
+**CPU Mode (Default)**
+
+First time build (15-25 minutes):
+1. Downloads base Docker image (Python)
+2. Installs Python dependencies
+3. **Downloads Chandra model from HuggingFace (~20GB)**
+4. Caches model in the image
+5. Image is ready for instant deployment
+
+Subsequent starts (30 seconds):
+1. Container starts
+2. Load pre-cached model from image into memory
+3. Ready to process requests
+
+**GPU Mode (Optional)**
+
+First time build (15-25 minutes):
 1. Downloads base Docker images (Python, vLLM)
 2. Installs Python dependencies
 3. **Downloads Chandra model from HuggingFace (~20GB)**
 4. Caches model in both images
 5. Images are ready for instant deployment
 
-**Subsequent starts** (2-3 minutes):
+Subsequent starts (2-3 minutes):
 1. Containers start
-2. Load pre-cached model from image into memory
+2. vLLM server loads pre-cached model into GPU memory
 3. Ready to process requests
 
 No downloads happen after the initial build!
 
-### Option 2: Using Docker with HuggingFace Backend
+### Manual Docker Build and Run
 
-For development or when GPU resources are limited:
-
-```bash
-# Start only the HuggingFace-based API
-docker-compose --profile hf up -d chandra-api-hf
-
-# Or build and run directly
-docker build -t chandra-api .
-docker run -p 5000:5000 -e INFERENCE_METHOD=hf chandra-api
-```
-
-### Option 3: Build and Run Docker Manually
+If you prefer to build and run manually:
 
 ```bash
-# Build the image
+# Build the API image
 docker build -t chandra-api .
 
-# Run with vLLM (requires separate vLLM server)
+# Run with HuggingFace (CPU mode, no GPU required)
+docker run -p 5000:5000 \
+  -e INFERENCE_METHOD=hf \
+  chandra-api
+
+# Or run with vLLM (requires separate vLLM server)
 docker run -p 5000:5000 \
   -e INFERENCE_METHOD=vllm \
   -e VLLM_API_BASE=http://your-vllm-server:8000/v1 \
   -e VLLM_MODEL_NAME=chandra \
-  chandra-api
-
-# Run with HuggingFace
-docker run -p 5000:5000 \
-  -e INFERENCE_METHOD=hf \
   chandra-api
 ```
 
@@ -246,6 +280,55 @@ server {
 ```
 
 ## Troubleshooting
+
+### GPU Driver Error: "could not select device driver nvidia with capabilities: [[gpu]]"
+
+This error occurs when:
+1. NVIDIA drivers are not installed on your system
+2. NVIDIA Container Toolkit is not installed
+3. GPU is not properly configured
+
+**Solution:** Use CPU mode (default) instead:
+
+```bash
+# Use CPU mode (default, no GPU required)
+docker-compose build
+docker-compose up -d
+```
+
+If you want to use GPU mode, ensure you have:
+- NVIDIA GPU with CUDA support
+- NVIDIA drivers installed on your host system
+- NVIDIA Container Toolkit installed ([installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html))
+
+Test your GPU setup:
+```bash
+docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+Once GPU is working, use:
+```bash
+docker-compose --profile gpu up -d
+```
+
+### Image Pull Warnings
+
+If you see warnings like "pull access denied for chandra-api":
+
+```
+! chandra-api Warning pull access denied for chandra-api, repository does not exist...
+```
+
+**This is normal!** These are local images that need to be built first. Docker tries to pull from a registry before building. The warnings can be safely ignored as long as the build completes successfully.
+
+To avoid these warnings and ensure images are built:
+```bash
+# Build images first
+docker-compose build
+
+# Then start services
+docker-compose up -d
+```
 
 ### vLLM Server Not Starting
 

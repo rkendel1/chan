@@ -1,7 +1,30 @@
 version: '3.8'
 
 services:
-  # vLLM server for optimized inference with pre-cached model
+  # Default: Chandra API with HuggingFace backend (CPU-only, no GPU required)
+  # This is the default service that starts when you run 'docker-compose up'
+  chandra-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chandra-api:cached
+    container_name: chandra-api
+    ports:
+      - "5000:5000"
+    environment:
+      - INFERENCE_METHOD=hf
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=5000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # GPU Mode: vLLM server with NVIDIA GPU (requires NVIDIA Container Toolkit)
+  # Start with: docker-compose --profile gpu up
   vllm-server:
     build:
       context: .
@@ -28,6 +51,8 @@ services:
               count: 1
               capabilities: [gpu]
     restart: unless-stopped
+    profiles:
+      - gpu
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -35,13 +60,14 @@ services:
       retries: 5
       start_period: 120s  # 2 minutes to load pre-cached model into memory
 
-  # Chandra OCR HTTP API with pre-cached model
-  chandra-api:
+  # GPU Mode: Chandra API using vLLM backend
+  # Start with: docker-compose --profile gpu up
+  chandra-api-gpu:
     build:
       context: .
       dockerfile: Dockerfile
     image: chandra-api:cached
-    container_name: chandra-api
+    container_name: chandra-api-vllm
     ports:
       - "5000:5000"
     environment:
@@ -54,6 +80,8 @@ services:
       vllm-server:
         condition: service_healthy
     restart: unless-stopped
+    profiles:
+      - gpu
     # Model is pre-cached in the image - no download needed
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -62,24 +90,3 @@ services:
       retries: 3
       start_period: 10s
 
-  # Alternative: Chandra API with HuggingFace backend (no GPU required for API, but slower)
-  chandra-api-hf:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: chandra-api-hf
-    ports:
-      - "5001:5000"
-    environment:
-      - INFERENCE_METHOD=hf
-      - HTTP_HOST=0.0.0.0
-      - HTTP_PORT=5000
-    restart: unless-stopped
-    profiles:
-      - hf
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
