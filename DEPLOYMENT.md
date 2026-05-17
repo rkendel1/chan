@@ -298,12 +298,12 @@ docker-compose up -d
 
 If you want to use GPU mode, ensure you have:
 - NVIDIA GPU with CUDA support
-- NVIDIA drivers installed on your host system
+- NVIDIA drivers installed on your host system (version 535+ recommended)
 - NVIDIA Container Toolkit installed ([installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html))
 
 Test your GPU setup:
 ```bash
-docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:13.0-base-ubuntu22.04 nvidia-smi
 ```
 
 Once GPU is working, use:
