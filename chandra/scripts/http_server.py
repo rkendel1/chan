@@ -47,16 +47,30 @@ def initialize_model(method: str = None):
     # Use lock to ensure thread-safe initialization
     with model_lock:
         if model is None and not model_initializing:
+            # Set flag immediately to prevent race condition
             model_initializing = True
-            try:
-                # Get method from environment or default to vllm
-                if method is None:
-                    method = os.environ.get('INFERENCE_METHOD', 'vllm')
-                logger.info(f"Initializing model with method: {method}")
-                model = InferenceManager(method=method)
-                logger.info("Model initialized successfully")
-            finally:
+    
+    # If we set the flag, do the initialization outside the lock
+    if model_initializing and model is None:
+        try:
+            # Get method from environment or default to vllm
+            if method is None:
+                method = os.environ.get('INFERENCE_METHOD', 'vllm')
+            logger.info(f"Initializing model with method: {method}")
+            temp_model = InferenceManager(method=method)
+            
+            # Set model and clear flag atomically
+            with model_lock:
+                model = temp_model
                 model_initializing = False
+            logger.info("Model initialized successfully")
+        except Exception as e:
+            # Clear flag on error
+            with model_lock:
+                model_initializing = False
+            logger.error(f"Model initialization failed: {e}")
+            raise
+    
     return model
 
 
@@ -170,7 +184,7 @@ def process_file():
             pages = []
             for page_num, result in enumerate(results):
                 page_data = {
-                    'page_num': page_num,
+                    'page_num': page_num,  # 0-indexed for internal use
                     'markdown': result.markdown,
                     'html': result.html,
                     'token_count': result.token_count,

@@ -725,11 +725,10 @@
                     setTimeout(async () => {
                         const retry = await fetch('/health');
                         const retryData = await retry.json();
-                        if (retryData.model_loaded) {
+                        if (retryData.model_loaded && !retryData.model_initializing) {
                             showSuccess('Server is ready!');
-                            if (selectedFile) {
-                                processBtn.disabled = false;
-                            }
+                            // Re-enable button only if we have a file
+                            processBtn.disabled = !selectedFile;
                         }
                     }, 5000);
                 }
