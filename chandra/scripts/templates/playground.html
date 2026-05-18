@@ -483,7 +483,7 @@
     <script>
         let selectedFile = null;
         let lastResults = null;
-        let modelReady = false;  // Track if model is ready
+        let isModelFullyReady = false;  // Track if model is fully loaded and ready to process
 
         // Tab switching
         function switchTab(tabName) {
@@ -550,7 +550,7 @@
             fileName.textContent = file.name;
             fileInfo.classList.add('show');
             // Only enable button if model is ready
-            processBtn.disabled = !modelReady;
+            processBtn.disabled = !isModelFullyReady;
             
             // Clear previous messages
             document.getElementById('error').classList.remove('show');
@@ -617,7 +617,7 @@
             } finally {
                 document.getElementById('processing').classList.remove('show');
                 // Only re-enable if we have a file and model is ready
-                processBtn.disabled = !(selectedFile && modelReady);
+                processBtn.disabled = !(selectedFile && isModelFullyReady);
             }
         }
 
@@ -716,6 +716,11 @@
 
         // Check server status on load
         window.addEventListener('load', async () => {
+            await checkServerStatus();
+        });
+
+        // Poll server status until model is ready
+        async function checkServerStatus() {
             try {
                 const response = await fetch('/health');
                 const data = await response.json();
@@ -723,28 +728,38 @@
                 if (data.model_initializing) {
                     showError('Server is still initializing. Please wait a moment before processing documents.');
                     processBtn.disabled = true;
-                    modelReady = false;
+                    isModelFullyReady = false;
                     
-                    // Check again after 5 seconds
-                    setTimeout(async () => {
-                        const retry = await fetch('/health');
-                        const retryData = await retry.json();
-                        if (retryData.model_loaded && !retryData.model_initializing) {
-                            showSuccess('Server is ready!');
-                            modelReady = true;
-                            // Re-enable button only if we have a file
-                            processBtn.disabled = !selectedFile;
+                    // Poll every 3 seconds until ready (max 10 attempts = 30 seconds)
+                    let attempts = 0;
+                    const pollInterval = setInterval(async () => {
+                        attempts++;
+                        try {
+                            const retry = await fetch('/health');
+                            const retryData = await retry.json();
+                            if (retryData.model_loaded && !retryData.model_initializing) {
+                                showSuccess('Server is ready!');
+                                isModelFullyReady = true;
+                                processBtn.disabled = !selectedFile;
+                                clearInterval(pollInterval);
+                            } else if (attempts >= 10) {
+                                // Give up after 30 seconds
+                                showError('Server is taking longer than expected to initialize. Please refresh the page.');
+                                clearInterval(pollInterval);
+                            }
+                        } catch (e) {
+                            // Ignore errors during polling
                         }
-                    }, 5000);
+                    }, 3000);
                 } else if (data.model_loaded) {
                     // Model is already ready
-                    modelReady = true;
+                    isModelFullyReady = true;
                 }
             } catch (error) {
                 showError('Unable to connect to server');
-                modelReady = false;
+                isModelFullyReady = false;
             }
-        });
+        }
     </script>
 </body>
 </html>
