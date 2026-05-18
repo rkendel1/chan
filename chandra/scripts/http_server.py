@@ -17,7 +17,10 @@ from chandra.input import load_file
 from chandra.model import InferenceManager
 from chandra.model.schema import BatchInputItem
 
-app = Flask(__name__)
+# Explicitly set template folder to ensure it's found when run with -m
+# This fixes the issue where Flask can't find templates when __name__ is '__main__'
+_script_dir = Path(__file__).parent
+app = Flask(__name__, template_folder=str(_script_dir / 'templates'))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -100,39 +103,43 @@ def process_file():
     Returns:
         JSON response with OCR results for all pages
     """
-    logger.info("Received request to /process endpoint")
-    
-    # Check if model is initialized or initializing
-    if model is None:
-        if model_initializing:
-            logger.warning("Model is still initializing")
-            return jsonify({
-                'error': 'Model is still initializing. Please wait and try again in a few moments.',
-                'status': 'initializing'
-            }), 503
-        else:
-            logger.error("Model not initialized")
-            return jsonify({
-                'error': 'Model not initialized. Server may have failed to start properly.'
-            }), 503
-    
-    # Check if file is present
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'Empty filename'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({
-            'error': f'File type not allowed. Supported types: {", ".join(ALLOWED_EXTENSIONS)}'
-        }), 400
-    
-    logger.info(f"Processing file: {file.filename}")
-    
+    tmp_filepath = None
     try:
+        logger.info("Received request to /process endpoint")
+        
+        # Check if model is initialized or initializing
+        if model is None:
+            if model_initializing:
+                logger.warning("Model is still initializing")
+                return jsonify({
+                    'error': 'Model is still initializing. Please wait and try again in a few moments.',
+                    'status': 'initializing'
+                }), 503
+            else:
+                logger.error("Model not initialized")
+                return jsonify({
+                    'error': 'Model not initialized. Server may have failed to start properly.'
+                }), 503
+        
+        # Check if file is present
+        if 'file' not in request.files:
+            logger.warning("No file provided in request")
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            logger.warning("Empty filename provided")
+            return jsonify({'error': 'Empty filename'}), 400
+        
+        if not allowed_file(file.filename):
+            logger.warning(f"File type not allowed: {file.filename}")
+            return jsonify({
+                'error': f'File type not allowed. Supported types: {", ".join(ALLOWED_EXTENSIONS)}'
+            }), 400
+        
+        logger.info(f"Processing file: {file.filename}")
+        
         # Get optional parameters
         page_range = request.form.get('page_range')
         include_images = request.form.get('include_images', 'true').lower() == 'true'
@@ -148,6 +155,7 @@ def process_file():
         
         # Verify the extension is in allowed list (additional security check)
         if file_extension not in ALLOWED_EXTENSIONS:
+            logger.warning(f"File extension not allowed: {file_extension}")
             return jsonify({
                 'error': f'File type not allowed. Supported types: {", ".join(ALLOWED_EXTENSIONS)}'
             }), 400
@@ -157,69 +165,80 @@ def process_file():
             file.save(tmp_file.name)
             tmp_filepath = tmp_file.name
         
-        try:
-            # Load images from file
-            config = {'page_range': page_range} if page_range else {}
-            images = load_file(tmp_filepath, config)
-            
-            # Create batch input items
-            batch = [
-                BatchInputItem(image=img, prompt_type="ocr_layout")
-                for img in images
-            ]
-            
-            # Build kwargs for generate
-            generate_kwargs = {
-                'include_images': include_images,
-                'include_headers_footers': include_headers_footers,
+        logger.info(f"Saved uploaded file to: {tmp_filepath}")
+        
+        # Load images from file
+        config = {'page_range': page_range} if page_range else {}
+        logger.info(f"Loading images from file with config: {config}")
+        images = load_file(tmp_filepath, config)
+        logger.info(f"Loaded {len(images)} image(s) from file")
+        
+        # Create batch input items
+        batch = [
+            BatchInputItem(image=img, prompt_type="ocr_layout")
+            for img in images
+        ]
+        
+        # Build kwargs for generate
+        generate_kwargs = {
+            'include_images': include_images,
+            'include_headers_footers': include_headers_footers,
+        }
+        
+        if max_output_tokens is not None:
+            generate_kwargs['max_output_tokens'] = max_output_tokens
+        
+        # Run inference
+        logger.info(f"Starting inference on {len(batch)} page(s)")
+        results = model.generate(batch, **generate_kwargs)
+        logger.info(f"Inference completed successfully, got {len(results)} result(s)")
+        
+        # Format response
+        pages = []
+        for page_num, result in enumerate(results):
+            page_data = {
+                'page_num': page_num,  # 0-indexed for internal use
+                'markdown': result.markdown,
+                'html': result.html,
+                'token_count': result.token_count,
+                'page_box': result.page_box,
+                'num_chunks': len(result.chunks),
+                'num_images': len(result.images),
             }
             
-            if max_output_tokens is not None:
-                generate_kwargs['max_output_tokens'] = max_output_tokens
+            # Add image names if images were extracted
+            if result.images:
+                page_data['image_names'] = list(result.images.keys())
             
-            # Run inference
-            results = model.generate(batch, **generate_kwargs)
-            
-            # Format response
-            pages = []
-            for page_num, result in enumerate(results):
-                page_data = {
-                    'page_num': page_num,  # 0-indexed for internal use
-                    'markdown': result.markdown,
-                    'html': result.html,
-                    'token_count': result.token_count,
-                    'page_box': result.page_box,
-                    'num_chunks': len(result.chunks),
-                    'num_images': len(result.images),
-                }
-                
-                # Add image names if images were extracted
-                if result.images:
-                    page_data['image_names'] = list(result.images.keys())
-                
-                pages.append(page_data)
-            
-            response = {
-                'success': True,
-                'filename': secure_filename(file.filename),
-                'num_pages': len(results),
-                'pages': pages
-            }
-            
-            return jsonify(response)
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(tmp_filepath):
-                os.unlink(tmp_filepath)
+            pages.append(page_data)
+        
+        response = {
+            'success': True,
+            'filename': secure_filename(file.filename),
+            'num_pages': len(results),
+            'pages': pages
+        }
+        
+        logger.info(f"Successfully processed {file.filename}")
+        return jsonify(response)
     
     except Exception as e:
-        # Log the error internally but don't expose stack trace to user
+        # Log the error internally with full traceback
         logger.error(f"Error processing file: {str(e)}", exc_info=True)
+        # Return a user-friendly error message
         return jsonify({
             'success': False,
             'error': 'An error occurred while processing the file. Please check the file format and try again.'
         }), 500
+    
+    finally:
+        # Always clean up temporary file
+        if tmp_filepath and os.path.exists(tmp_filepath):
+            try:
+                os.unlink(tmp_filepath)
+                logger.info(f"Cleaned up temporary file: {tmp_filepath}")
+            except Exception as cleanup_error:
+                logger.error(f"Error cleaning up temporary file: {cleanup_error}")
 
 
 @app.route('/', methods=['GET'])
