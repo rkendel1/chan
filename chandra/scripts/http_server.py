@@ -44,6 +44,8 @@ if hasattr(sys.stderr, 'reconfigure'):
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp'}
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
 DEFAULT_INFERENCE_TIMEOUT = 600  # 10 minutes default timeout
+MEMORY_PRESSURE_ABORT_THRESHOLD = 0.90  # Abort request if RSS exceeds 90% of container memory limit
+EFFECTIVELY_UNLIMITED_MEMORY_BYTES = 1 << 60  # 1 EiB; used to treat cgroup pseudo-unlimited values as "no cap"
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
@@ -167,6 +169,32 @@ def get_pdf_page_count(filepath: str) -> int:
         if isinstance(pages, int) and pages > 0:
             return pages
         raise ValueError("Could not determine PDF page count")
+
+
+def get_memory_limit_bytes() -> Optional[int]:
+    """Best-effort container memory limit detection (cgroup v2/v1).
+
+    Returns:
+        int: Memory limit in bytes when a finite container limit is detected.
+        None: No finite limit could be determined (missing files or unlimited value).
+    """
+    cgroup_files = (
+        "/sys/fs/cgroup/memory.max",  # cgroup v2
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",  # cgroup v1
+    )
+    for cgroup_file in cgroup_files:
+        try:
+            raw_value = Path(cgroup_file).read_text(encoding="utf-8").strip()
+            if not raw_value or raw_value == "max":
+                continue
+            limit = int(raw_value)
+            # Ignore invalid and effectively-unlimited values.
+            if limit >= EFFECTIVELY_UNLIMITED_MEMORY_BYTES:
+                continue
+            return limit
+        except (FileNotFoundError, PermissionError, ValueError, OSError):
+            continue
+    return None
 
 
 def initialize_model(method: str = None):
@@ -326,6 +354,26 @@ def process_file():
             process = psutil.Process()
             mem_info = process.memory_info()
             logger.info(f"Memory usage before inference: RSS={mem_info.rss / 1024 / 1024:.1f}MB, VMS={mem_info.vms / 1024 / 1024:.1f}MB")
+
+            memory_limit = get_memory_limit_bytes()
+            if memory_limit and memory_limit > 0:
+                usage_ratio = mem_info.rss / memory_limit
+                logger.info(
+                    f"Container memory limit: {memory_limit / 1024 / 1024:.1f}MB, "
+                    f"current RSS ratio: {usage_ratio:.1%}"
+                )
+                if usage_ratio >= MEMORY_PRESSURE_ABORT_THRESHOLD:
+                    logger.error(
+                        f"Aborting processing due to high memory pressure "
+                        f"(RSS ratio {usage_ratio:.0%} >= {MEMORY_PRESSURE_ABORT_THRESHOLD:.0%})"
+                    )
+                    return jsonify({
+                        'success': False,
+                        'error': (
+                            'Server memory is critically high before processing begins. '
+                            'Try a smaller document/page range or increase container memory.'
+                        )
+                    }), 507
         except ImportError:
             pass  # psutil not available, skip memory logging
         except Exception as e:

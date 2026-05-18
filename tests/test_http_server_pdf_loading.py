@@ -1,4 +1,6 @@
 from io import BytesIO
+import sys
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from PIL import Image
@@ -101,3 +103,70 @@ def test_process_pdf_falls_back_to_eager_loading_when_page_count_fails(monkeypat
     assert payload["num_pages"] == 2
     assert mock_model.generate.call_count == 2
     assert load_calls == [{}]
+
+
+def test_process_aborts_when_memory_pressure_is_too_high(monkeypatch):
+    app = http_server.app
+    client = app.test_client()
+
+    mock_model = Mock()
+    mock_model.generate = Mock(return_value=[_mock_batch_output(0)])
+    monkeypatch.setattr(http_server, "model", mock_model)
+    monkeypatch.setattr(http_server, "model_initializing", False)
+    monkeypatch.setattr(http_server, "get_memory_limit_bytes", lambda: 1000)
+
+    fake_process = Mock()
+    fake_process.memory_info.return_value = SimpleNamespace(rss=950, vms=1200)
+    fake_psutil = SimpleNamespace(Process=lambda: fake_process)
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    monkeypatch.setattr(
+        http_server,
+        "load_file",
+        lambda *_: [Image.new("RGB", (100, 100), "white")],
+    )
+
+    response = client.post(
+        "/process",
+        data={"file": (BytesIO(b"mock image"), "sample.png")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 507
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert "memory is critically high" in payload["error"]
+    assert mock_model.generate.call_count == 0
+
+
+def test_process_continues_when_memory_pressure_is_below_threshold(monkeypatch):
+    app = http_server.app
+    client = app.test_client()
+
+    mock_model = Mock()
+    mock_model.generate = Mock(return_value=[_mock_batch_output(0)])
+    monkeypatch.setattr(http_server, "model", mock_model)
+    monkeypatch.setattr(http_server, "model_initializing", False)
+    monkeypatch.setattr(http_server, "get_memory_limit_bytes", lambda: 1000)
+
+    fake_process = Mock()
+    fake_process.memory_info.return_value = SimpleNamespace(rss=890, vms=1200)
+    fake_psutil = SimpleNamespace(Process=lambda: fake_process)
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    monkeypatch.setattr(
+        http_server,
+        "load_file",
+        lambda *_: [Image.new("RGB", (100, 100), "white")],
+    )
+
+    response = client.post(
+        "/process",
+        data={"file": (BytesIO(b"mock image"), "sample.png")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert mock_model.generate.call_count == 1
