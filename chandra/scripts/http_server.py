@@ -5,7 +5,6 @@ Processes images and PDFs and returns OCR results as JSON.
 import io
 import logging
 import os
-import signal
 import tempfile
 import threading
 from pathlib import Path
@@ -252,7 +251,12 @@ def process_file():
         logger.info(f"Starting inference on {len(batch)} page(s)")
         try:
             # Use timeout wrapper to prevent hanging
-            inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', 600))  # Default 10 minutes
+            try:
+                inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', 600))  # Default 10 minutes
+            except (ValueError, TypeError):
+                logger.warning("Invalid INFERENCE_TIMEOUT value, using default of 600 seconds")
+                inference_timeout = 600
+            
             logger.info(f"Using inference timeout of {inference_timeout} seconds")
             results = run_inference_with_timeout(model, batch, timeout_seconds=inference_timeout, **generate_kwargs)
             logger.info(f"Inference completed successfully, got {len(results)} result(s)")
@@ -260,7 +264,7 @@ def process_file():
             logger.error(f"Inference timed out: {str(e)}")
             return jsonify({
                 'success': False,
-                'error': f'Processing timed out. The document may be too complex or large.'
+                'error': f'Processing timed out after {inference_timeout} seconds. The document may be too complex or large.'
             }), 504
         except Exception as e:
             logger.error(f"Inference failed: {str(e)}", exc_info=True)

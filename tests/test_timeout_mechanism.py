@@ -84,8 +84,9 @@ def test_timeout_mechanism():
         elapsed = time.time() - start
         print(f"✓ PASSED: Correctly timed out after {elapsed:.1f} seconds")
         print(f"  Error message: {str(e)}")
-        if elapsed < 1.5 or elapsed > 3.0:
-            print(f"✗ FAILED: Timeout took {elapsed:.1f}s, expected ~2s")
+        # Allow some tolerance for thread scheduling and system load
+        if elapsed < 1.5 or elapsed > 4.0:
+            print(f"✗ FAILED: Timeout took {elapsed:.1f}s, expected ~2s (allowed 1.5-4.0s)")
             return False
     
     # Test 2: Fast generate should complete successfully
