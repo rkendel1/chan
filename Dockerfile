@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir flask
 # Note: Model will be downloaded at runtime if not cached during build
 RUN pip install --no-cache-dir huggingface-hub && \
     (hf download datalab-to/chandra-ocr-2 && echo "Model cached successfully in image") || \
-    echo "Model download skipped (will download at runtime)"
+    echo "WARNING: Model download failed during build (likely network issue). Model will be downloaded at runtime."
 
 # Copy application code
 COPY chandra/ ./chandra/
