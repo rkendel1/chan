@@ -19,20 +19,18 @@ COPY pyproject.toml uv.lock ./
 RUN pip install --no-cache-dir uv
 
 # Install Python dependencies
-# For vLLM mode (lightweight), we only need base dependencies
-RUN uv pip install --system --no-cache -e .
-
-# For HuggingFace mode, uncomment the line below
-# RUN uv pip install --system --no-cache -e ".[hf]"
+# Install with HuggingFace extras to support the default INFERENCE_METHOD=hf mode
+RUN uv pip install --system --no-cache -e ".[hf]"
 
 # Install Flask for HTTP server (from dev dependencies)
 RUN pip install --no-cache-dir flask
 
 # Pre-download the model during build to cache it in the image
 # This adds ~20GB to the image but makes startup immediate
+# Note: Model will be downloaded at runtime if not cached during build
 RUN pip install --no-cache-dir huggingface-hub && \
-    hf download datalab-to/chandra-ocr-2 && \
-    echo "Model cached successfully in image"
+    (hf download datalab-to/chandra-ocr-2 && echo "Model cached successfully in image") || \
+    echo "Model download skipped (will download at runtime)"
 
 # Copy application code
 COPY chandra/ ./chandra/

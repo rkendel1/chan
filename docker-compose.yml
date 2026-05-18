@@ -1,5 +1,3 @@
-version: '3.8'
-
 # NOTE: If you see warnings like "pull access denied for chandra-api" or "pull access denied for chandra-vllm",
 # this is normal! These are local images that need to be built first.
 # Docker tries to pull from a registry before building. Run 'docker-compose build' to build the images.
