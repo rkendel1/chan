@@ -5,6 +5,7 @@ Processes images and PDFs and returns OCR results as JSON.
 import io
 import logging
 import os
+import signal
 import tempfile
 import threading
 from pathlib import Path
@@ -23,8 +24,19 @@ _script_dir = Path(__file__).parent
 app = Flask(__name__, template_folder=str(_script_dir / 'templates'))
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+    force=True
+)
 logger = logging.getLogger(__name__)
+
+# Ensure logs are flushed immediately
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(line_buffering=True)
 
 # Configure upload settings
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp'}
@@ -36,6 +48,54 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 model: Optional[InferenceManager] = None
 model_lock = threading.Lock()
 model_initializing = False  # Track if model is currently initializing
+
+
+# Timeout exception for inference
+class InferenceTimeoutError(Exception):
+    """Raised when inference takes too long."""
+    pass
+
+
+def run_inference_with_timeout(model, batch, timeout_seconds=600, **kwargs):
+    """
+    Run model inference with a timeout.
+    
+    Args:
+        model: The InferenceManager instance
+        batch: Batch of items to process
+        timeout_seconds: Maximum time to wait (default 10 minutes)
+        **kwargs: Additional arguments for generate()
+    
+    Returns:
+        Results from model.generate()
+    
+    Raises:
+        InferenceTimeoutError: If inference takes longer than timeout_seconds
+    """
+    result_container = {'results': None, 'error': None}
+    
+    def target():
+        try:
+            logger.info("Inference thread started")
+            result_container['results'] = model.generate(batch, **kwargs)
+            logger.info(f"Inference thread completed with {len(result_container['results'])} results")
+        except Exception as e:
+            logger.error(f"Inference thread encountered error: {str(e)}", exc_info=True)
+            result_container['error'] = e
+    
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+    
+    if thread.is_alive():
+        logger.error(f"Inference timed out after {timeout_seconds} seconds")
+        raise InferenceTimeoutError(f"Inference took longer than {timeout_seconds} seconds")
+    
+    if result_container['error'] is not None:
+        raise result_container['error']
+    
+    return result_container['results']
 
 
 def allowed_file(filename: str) -> bool:
@@ -190,12 +250,27 @@ def process_file():
         
         # Run inference
         logger.info(f"Starting inference on {len(batch)} page(s)")
-        results = model.generate(batch, **generate_kwargs)
-        logger.info(f"Inference completed successfully, got {len(results)} result(s)")
+        try:
+            # Use timeout wrapper to prevent hanging
+            inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', 600))  # Default 10 minutes
+            logger.info(f"Using inference timeout of {inference_timeout} seconds")
+            results = run_inference_with_timeout(model, batch, timeout_seconds=inference_timeout, **generate_kwargs)
+            logger.info(f"Inference completed successfully, got {len(results)} result(s)")
+        except InferenceTimeoutError as e:
+            logger.error(f"Inference timed out: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'Processing timed out. The document may be too complex or large.'
+            }), 504
+        except Exception as e:
+            logger.error(f"Inference failed: {str(e)}", exc_info=True)
+            raise  # Re-raise to be caught by outer exception handler
         
         # Format response
+        logger.info("Formatting response...")
         pages = []
         for page_num, result in enumerate(results):
+            logger.debug(f"Formatting page {page_num}")
             page_data = {
                 'page_num': page_num,
                 'markdown': result.markdown,
@@ -212,6 +287,7 @@ def process_file():
             
             pages.append(page_data)
         
+        logger.info(f"Formatted {len(pages)} page(s)")
         response = {
             'success': True,
             'filename': secure_filename(file.filename),
@@ -219,7 +295,7 @@ def process_file():
             'pages': pages
         }
         
-        logger.info(f"Successfully processed {file.filename}")
+        logger.info(f"Successfully processed {file.filename}, returning response")
         return jsonify(response)
     
     except Exception as e:
