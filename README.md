@@ -81,7 +81,10 @@ docker-compose build
 # Start service (CPU mode by default, no GPU required)
 docker-compose up -d
 
-# Test the API
+# Access the playground UI
+open http://localhost:5000/playground
+
+# Or test the API with curl
 curl -X POST http://localhost:5000/process \
   -F "file=@document.pdf"
 
@@ -90,6 +93,8 @@ curl -X POST http://localhost:5000/process \
   -F "file=@image.png" \
   | python -m json.tool
 ```
+
+**Playground UI:** The service includes an interactive web interface at `/playground` with drag-and-drop file upload, configurable processing options, and visual results display.
 
 **GPU Mode (Optional):** If you have NVIDIA GPU and drivers:
 ```shell

@@ -121,6 +121,23 @@ docker run -p 5000:5000 \
 
 ## API Usage
 
+### Playground UI (Interactive Testing)
+
+The easiest way to test the API is through the interactive playground UI:
+
+```bash
+# Open in your browser
+open http://localhost:5000/playground
+# or visit http://localhost:5000/playground directly
+```
+
+The playground provides:
+- **Drag-and-drop file upload** for documents and images
+- **Interactive configuration** of processing options (page range, headers/footers, etc.)
+- **Visual results display** with formatted markdown output
+- **Copy-to-clipboard** functionality for easy result extraction
+- **Real-time status updates** during model initialization
+
 ### Health Check
 
 ```bash
@@ -131,9 +148,12 @@ Response:
 ```json
 {
   "status": "healthy",
-  "model_loaded": true
+  "model_loaded": true,
+  "model_initializing": false
 }
 ```
+
+**Note:** If `model_initializing` is `true`, the server is still loading the model. Wait a few moments before processing documents. The playground UI will automatically detect this and notify you.
 
 ### API Information
 
