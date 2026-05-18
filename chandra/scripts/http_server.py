@@ -259,8 +259,9 @@ def process_file():
             # Use timeout wrapper to prevent hanging
             try:
                 inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', DEFAULT_INFERENCE_TIMEOUT))
-            except (ValueError, TypeError):
-                logger.warning(f"Invalid INFERENCE_TIMEOUT value, using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
+            except (ValueError, TypeError) as e:
+                invalid_value = os.environ.get('INFERENCE_TIMEOUT', 'not set')
+                logger.warning(f"Invalid INFERENCE_TIMEOUT value '{invalid_value}': {e}. Using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
                 inference_timeout = DEFAULT_INFERENCE_TIMEOUT
             
             logger.info(f"Using inference timeout of {inference_timeout} seconds")
@@ -270,7 +271,7 @@ def process_file():
             logger.error(f"Inference timed out: {str(e)}")
             return jsonify({
                 'success': False,
-                'error': f'Processing timed out after {inference_timeout} seconds. The document may be too complex or large.'
+                'error': f'Processing timed out after {inference_timeout} seconds. This may be due to document complexity, size, or system resource constraints. Try reducing the document size or increasing the timeout via INFERENCE_TIMEOUT environment variable.'
             }), 504
         except Exception as e:
             logger.error(f"Inference failed: {str(e)}", exc_info=True)

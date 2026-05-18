@@ -114,11 +114,11 @@ def test_timeout_mechanism():
         return False
     
     # Test 3: Exception in inference should be propagated
-    print("\nTest 3: Testing exception propagation...")
+    print("\nTest 3: Testing exception propagation (ValueError)...")
     
     def error_generate(batch, **kwargs):
         """Simulate a generate call that raises an exception."""
-        print("Error generate called, raising exception...")
+        print("Error generate called, raising ValueError...")
         raise ValueError("Test error from generate")
     
     mock_model.generate = error_generate
@@ -128,7 +128,27 @@ def test_timeout_mechanism():
         print("✗ FAILED: Should have raised ValueError")
         return False
     except ValueError as e:
-        print(f"✓ PASSED: Exception correctly propagated: {str(e)}")
+        print(f"✓ PASSED: ValueError correctly propagated: {str(e)}")
+    except Exception as e:
+        print(f"✗ FAILED: Wrong exception type: {type(e).__name__}: {str(e)}")
+        return False
+    
+    # Test 4: Different exception types should be propagated
+    print("\nTest 4: Testing exception propagation (RuntimeError)...")
+    
+    def runtime_error_generate(batch, **kwargs):
+        """Simulate a generate call that raises a RuntimeError."""
+        print("Error generate called, raising RuntimeError...")
+        raise RuntimeError("Test runtime error from generate")
+    
+    mock_model.generate = runtime_error_generate
+    
+    try:
+        results = run_inference_with_timeout(mock_model, mock_batch, timeout_seconds=5)
+        print("✗ FAILED: Should have raised RuntimeError")
+        return False
+    except RuntimeError as e:
+        print(f"✓ PASSED: RuntimeError correctly propagated: {str(e)}")
     except Exception as e:
         print(f"✗ FAILED: Wrong exception type: {type(e).__name__}: {str(e)}")
         return False
