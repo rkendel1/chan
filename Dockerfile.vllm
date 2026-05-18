@@ -3,8 +3,10 @@ FROM vllm/vllm-openai:latest
 
 # Pre-download the Chandra model during build
 # This adds ~20GB to the image but makes startup immediate
+# Timeout prevents builds from hanging indefinitely on slow/broken networks
+ARG HF_DOWNLOAD_TIMEOUT=2700
 RUN pip install --no-cache-dir huggingface-hub && \
-    hf download datalab-to/chandra-ocr-2 && \
+    HF_HUB_ETAG_TIMEOUT=30 HF_HUB_DOWNLOAD_TIMEOUT=120 timeout "${HF_DOWNLOAD_TIMEOUT}s" hf download datalab-to/chandra-ocr-2 && \
     echo "Chandra model cached in vLLM image"
 
 # The model is now cached at /root/.cache/huggingface/

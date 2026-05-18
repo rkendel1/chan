@@ -34,8 +34,10 @@ RUN pip install --no-cache-dir flask
 # Pre-download the model during build to cache it in the image
 # This adds ~20GB to the image but makes startup immediate
 # Note: Model will be downloaded at runtime if not cached during build
+# Timeout prevents builds from hanging indefinitely on slow/broken networks
+ARG HF_DOWNLOAD_TIMEOUT=2700
 RUN pip install --no-cache-dir huggingface-hub && \
-    (hf download datalab-to/chandra-ocr-2 && echo "Model cached successfully in image") || \
+    (HF_HUB_ETAG_TIMEOUT=30 HF_HUB_DOWNLOAD_TIMEOUT=120 timeout "${HF_DOWNLOAD_TIMEOUT}s" hf download datalab-to/chandra-ocr-2 && echo "Model cached successfully in image") || \
     echo "WARNING: Model download failed during build (likely network issue). Model will be downloaded at runtime."
 
 # Copy application code

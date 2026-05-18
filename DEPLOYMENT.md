@@ -402,6 +402,21 @@ docker-compose build
 docker-compose up -d
 ```
 
+### Build Appears Stuck While Downloading Model
+
+If build output appears to stop at:
+
+```
+Fetching N files: ...
+```
+
+the model download may be waiting on a slow/unreliable connection. The Docker build now applies a timeout to avoid hanging forever and falls back to runtime download if the timeout is hit.
+
+To increase the timeout for slower networks:
+```bash
+docker-compose build --build-arg HF_DOWNLOAD_TIMEOUT=5400
+```
+
 ### vLLM Server Not Starting
 
 Ensure you have:
