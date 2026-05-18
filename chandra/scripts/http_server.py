@@ -197,7 +197,7 @@ def process_file():
         pages = []
         for page_num, result in enumerate(results):
             page_data = {
-                'page_num': page_num,  # 0-indexed for internal use
+                'page_num': page_num,
                 'markdown': result.markdown,
                 'html': result.html,
                 'token_count': result.token_count,

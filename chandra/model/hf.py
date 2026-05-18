@@ -92,14 +92,24 @@ def load_model():
     if settings.TORCH_ATTN:
         kwargs["attn_implementation"] = settings.TORCH_ATTN
 
-    model = AutoModelForImageTextToText.from_pretrained(
-        settings.MODEL_CHECKPOINT, **kwargs
-    )
-    model = model.eval()
-    processor = AutoProcessor.from_pretrained(
-        settings.MODEL_CHECKPOINT,
-        local_files_only=True  # Use cached processor without external API calls
-    )
-    processor.tokenizer.padding_side = "left"
-    model.processor = processor
-    return model
+    try:
+        model = AutoModelForImageTextToText.from_pretrained(
+            settings.MODEL_CHECKPOINT, **kwargs
+        )
+        model = model.eval()
+        processor = AutoProcessor.from_pretrained(
+            settings.MODEL_CHECKPOINT,
+            local_files_only=True  # Use cached processor without external API calls
+        )
+        processor.tokenizer.padding_side = "left"
+        model.processor = processor
+        return model
+    except OSError as e:
+        # If model is not cached locally, provide helpful error message
+        if "does not appear to have a file named" in str(e) or "not found in the HuggingFace cache" in str(e):
+            raise OSError(
+                f"Model '{settings.MODEL_CHECKPOINT}' not found in local cache. "
+                "Please download the model first using: "
+                f"hf download {settings.MODEL_CHECKPOINT}"
+            ) from e
+        raise
