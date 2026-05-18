@@ -25,6 +25,11 @@ RUN uv pip install --system --no-cache -e ".[hf]"
 # Install Flask for HTTP server (from dev dependencies)
 RUN pip install --no-cache-dir flask
 
+# Optional: Install pypdfium2 with XFA support for XFA-enabled PDF forms
+# XFA (XML Forms Architecture) is an Adobe PDF form type - uncomment if needed
+# Note: This increases build time as it compiles pypdfium2 from source with v8
+# RUN PDFIUM_PLATFORM=auto-v8 pip install -v pypdfium2==4.30.0 --no-binary pypdfium2 --force-reinstall
+
 # Pre-download the model during build to cache it in the image
 # This adds ~20GB to the image but makes startup immediate
 # Note: Model will be downloaded at runtime if not cached during build
