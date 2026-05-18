@@ -4,6 +4,8 @@
 
 > **📦 MODEL PRE-CACHED**: The ~20GB Chandra model is now downloaded during Docker build and included in the image. First build takes 15-25 minutes, but startup is then instant (2-3 minutes). See [WHAT_DOWNLOADS.md](WHAT_DOWNLOADS.md) for details.
 
+> **⚠️ DISK SPACE REQUIRED**: Building the Docker image requires **40GB+ free disk space** (25GB for image + 15GB working space). If you see "no space left on device" or "input/output error" during build, see [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md) for troubleshooting.
+
 This guide explains how to deploy Chandra OCR as a containerized HTTP API service that accepts file uploads.
 
 ## Quick Start
@@ -12,21 +14,31 @@ This guide explains how to deploy Chandra OCR as a containerized HTTP API servic
 
 - Docker (version 20.10 or higher)
 - Docker Compose (version 2.0 or higher)
-- **25GB free disk space** (for building image with cached model)
+- **40GB+ free disk space** (25GB for image + 15GB working space)
+  - ⚠️ If you see "no space left on device" errors, see [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md)
 - **Internet connection** (for initial build to download model)
+
+**Check your disk space before building:**
+```bash
+df -h
+```
 
 ### Prerequisites (GPU Mode - Optional)
 
 In addition to the above:
 - NVIDIA GPU with CUDA support
 - NVIDIA Container Toolkit (for GPU access in Docker)
-- **50GB free disk space** (for building both images with cached models)
+- **70GB+ free disk space** (50GB for both images + 20GB working space)
+  - ⚠️ GPU mode builds TWO images and requires significantly more space
 
 ### Build and Deploy (CPU Mode - Default)
 
 This is the recommended mode if you don't have a GPU or encounter GPU driver errors:
 
 ```bash
+# Check disk space first (recommended)
+./check_disk_space.sh
+
 # Build image (downloads model during build, takes 15-25 minutes first time)
 docker-compose build
 
@@ -300,6 +312,46 @@ server {
 ```
 
 ## Troubleshooting
+
+### Build Failure: "no space left on device" or "input/output error"
+
+If you see errors like:
+```
+failed to solve: write /var/lib/desktop-containerd/daemon/io.containerd.metadata.v1.bolt/meta.db: input/output error: unknown
+no space left on device
+```
+
+or
+
+```
+ERROR [chandra-api] exporting to image
+failed to solve: failed to create temp dir: input/output error: unknown
+```
+
+**This is a disk space issue.** The Docker build requires 40GB+ of free disk space.
+
+**Quick fix:**
+
+1. Check your disk space:
+   ```bash
+   df -h
+   ```
+
+2. Clean up Docker resources:
+   ```bash
+   # Remove build cache (can free 10-30GB!)
+   docker builder prune -a -f
+   
+   # Remove unused images and containers
+   docker system prune -a -f
+   ```
+
+3. Retry the build:
+   ```bash
+   docker-compose build
+   ```
+
+**For detailed troubleshooting and alternative solutions, see [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md).**
 
 ### GPU Driver Error: "could not select device driver nvidia with capabilities: [[gpu]]"
 

@@ -60,11 +60,19 @@ docker-compose up
 
 ## Storage Requirements
 
-Make sure you have:
-- **Docker build cache**: 30GB
+Make sure you have enough free disk space:
+
+### CPU Mode Only (default)
+- **Final image**: 25GB
+- **Build cache**: 15GB
+- **Total**: **40GB free disk space**
+
+### GPU Mode (both images)
 - **Final images**: 50GB (25GB × 2 services)
-- **Working space**: 10GB
-- **Total**: 90GB free disk space
+- **Build cache**: 20GB
+- **Total**: **70GB free disk space**
+
+> **⚠️ Critical:** If you see "no space left on device" or "input/output error" during build, you need to free up disk space. See [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md) for troubleshooting.
 
 ## Network Requirements
 

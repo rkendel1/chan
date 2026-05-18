@@ -16,8 +16,15 @@ The docker-compose configuration has been updated to support two deployment mode
 
 This is now the **default mode** that works on any system without requiring GPU or NVIDIA drivers.
 
+**Prerequisites:**
+- Docker and Docker Compose
+- **40GB+ free disk space** (for building)
+
 **How to use:**
 ```bash
+# Check disk space first
+df -h
+
 # Build the image
 docker-compose build
 
@@ -30,6 +37,8 @@ docker-compose ps
 # View logs
 docker-compose logs -f chandra-api
 ```
+
+> **⚠️ Disk Space:** If you see "no space left on device" errors during build, run `docker system prune -a -f` to clean up. See [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md) for details.
 
 **Features:**
 - Uses HuggingFace backend
@@ -46,6 +55,7 @@ For users with NVIDIA GPU and proper drivers, GPU mode offers much faster infere
 - NVIDIA GPU with CUDA support
 - NVIDIA drivers (version 535+ recommended)
 - NVIDIA Container Toolkit installed
+- **70GB+ free disk space** (for building both images)
 
 **How to use:**
 ```bash
