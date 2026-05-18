@@ -149,6 +149,26 @@ def allowed_file(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
 
+def get_pdf_page_count(filepath: str) -> int:
+    """Return the number of pages in a PDF file."""
+    try:
+        import pypdfium2 as pdfium
+
+        doc = pdfium.PdfDocument(filepath)
+        try:
+            return len(doc)
+        finally:
+            doc.close()
+    except Exception:
+        from pdf2image import pdfinfo_from_path
+
+        info = pdfinfo_from_path(filepath)
+        pages = info.get("Pages")
+        if isinstance(pages, int) and pages > 0:
+            return pages
+        raise ValueError("Could not determine PDF page count")
+
+
 def initialize_model(method: str = None):
     """Initialize the inference model with thread safety."""
     global model, model_initializing
@@ -273,17 +293,23 @@ def process_file():
         
         logger.info(f"Saved uploaded file to: {tmp_filepath}")
         
-        # Load images from file
-        config = {'page_range': page_range} if page_range else {}
-        logger.info(f"Loading images from file with config: {config}")
-        images = load_file(tmp_filepath, config)
-        logger.info(f"Loaded {len(images)} image(s) from file")
-        
-        # Create batch input items
-        batch = [
-            BatchInputItem(image=img, prompt_type="ocr_layout")
-            for img in images
-        ]
+        # Determine how many pages we will process
+        images = []
+        lazy_pdf_page_loading = False
+        if file_extension == '.pdf' and not page_range:
+            try:
+                num_pages = get_pdf_page_count(tmp_filepath)
+                lazy_pdf_page_loading = True
+                logger.info(f"PDF has {num_pages} page(s); enabling per-page lazy loading")
+            except Exception as e:
+                logger.warning(f"Could not determine PDF page count for lazy loading ({e}); falling back to eager page loading")
+
+        if not lazy_pdf_page_loading:
+            config = {'page_range': page_range} if page_range else {}
+            logger.info(f"Loading images from file with config: {config}")
+            images = load_file(tmp_filepath, config)
+            num_pages = len(images)
+            logger.info(f"Loaded {num_pages} image(s) from file")
         
         # Build kwargs for generate
         generate_kwargs = {
@@ -306,17 +332,25 @@ def process_file():
             logger.debug(f"Could not get memory info: {e}")
         
         # Run inference
-        logger.info(f"Starting inference on {len(batch)} page(s)")
+        logger.info(f"Starting inference on {num_pages} page(s)")
         
         # For large batches, warn about potential memory issues
-        if len(batch) > 10:
-            logger.warning(f"Processing {len(batch)} pages in one request may cause memory issues. Consider using page_range to process fewer pages at once.")
+        if num_pages > 10:
+            logger.warning(f"Processing {num_pages} pages in one request may cause memory issues. Consider using page_range to process fewer pages at once.")
         
         # Process pages individually to avoid OOM crashes with large batches
-        # This is safer than batch processing which can crash the entire server
         results = []
-        for page_idx, page_item in enumerate(batch):
+        for page_idx in range(num_pages):
+            page_item = None
             try:
+                if lazy_pdf_page_loading:
+                    page_images = load_file(tmp_filepath, {'page_range': str(page_idx)})
+                    if not page_images:
+                        raise ValueError(f"No image found for page index {page_idx}")
+                    page_item = BatchInputItem(image=page_images[0], prompt_type="ocr_layout")
+                else:
+                    page_item = BatchInputItem(image=images[page_idx], prompt_type="ocr_layout")
+
                 # Use timeout wrapper to prevent hanging
                 try:
                     inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', DEFAULT_INFERENCE_TIMEOUT))
@@ -325,13 +359,13 @@ def process_file():
                     logger.warning(f"Invalid INFERENCE_TIMEOUT value '{invalid_value}': {e}. Using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
                     inference_timeout = DEFAULT_INFERENCE_TIMEOUT
                 
-                logger.info(f"Processing page {page_idx + 1}/{len(batch)}")
+                logger.info(f"Processing page {page_idx + 1}/{num_pages}")
                 sys.stdout.flush()
                 sys.stderr.flush()
                 
                 page_results = run_inference_with_timeout(model, [page_item], timeout_seconds=inference_timeout, **generate_kwargs)
                 results.extend(page_results)
-                logger.info(f"Page {page_idx + 1}/{len(batch)} completed successfully")
+                logger.info(f"Page {page_idx + 1}/{num_pages} completed successfully")
             except InferenceTimeoutError as e:
                 logger.error(f"Page {page_idx + 1} timed out: {str(e)}")
                 sys.stdout.flush()
@@ -357,6 +391,11 @@ def process_file():
                     'success': False,
                     'error': f'Processing failed on page {page_idx + 1}: {str(e)}'
                 }), 500
+            finally:
+                if page_item is not None and hasattr(page_item.image, 'close'):
+                    page_item.image.close()
+                if not lazy_pdf_page_loading and page_idx < len(images):
+                    images[page_idx] = None
         
         logger.info(f"All {len(results)} page(s) processed successfully")
         
