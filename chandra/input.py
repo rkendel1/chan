@@ -24,13 +24,49 @@ def load_image(
     return image
 
 
+def _load_pdf_images_fallback(
+    filepath: str,
+    page_range: List[int],
+    image_dpi: int = settings.IMAGE_DPI,
+    min_pdf_image_dim: int = settings.MIN_PDF_IMAGE_DIM,
+) -> List[Image.Image]:
+    """Fallback PDF renderer using pdf2image (poppler) for PDFs that pdfium cannot open.
+
+    This handles XFA-based form PDFs (e.g. ACORD, fillable insurance forms) and
+    other PDF variants that pypdfium2 reports as 'Data format error'.
+    """
+    from pdf2image import convert_from_path
+
+    all_pages = convert_from_path(filepath, dpi=image_dpi)
+
+    images = []
+    for page_num, pil_image in enumerate(all_pages):
+        if page_range and page_num not in page_range:
+            continue
+        pil_image = pil_image.convert("RGB")
+        min_dim = min(pil_image.width, pil_image.height)
+        if min_dim < min_pdf_image_dim:
+            scale = min_pdf_image_dim / min_dim
+            new_size = (int(pil_image.width * scale), int(pil_image.height * scale))
+            pil_image = pil_image.resize(new_size, Image.Resampling.LANCZOS)
+        images.append(pil_image)
+
+    return images
+
+
 def load_pdf_images(
     filepath: str,
     page_range: List[int],
     image_dpi: int = settings.IMAGE_DPI,
     min_pdf_image_dim: int = settings.MIN_PDF_IMAGE_DIM,
 ) -> List[Image.Image]:
-    doc = pdfium.PdfDocument(filepath)
+    try:
+        doc = pdfium.PdfDocument(filepath)
+    except pdfium.PdfiumError:
+        # pypdfium2 cannot open certain PDF types (e.g. XFA-based fillable forms).
+        # Fall back to pdf2image which uses poppler and supports a wider range of PDFs.
+        return _load_pdf_images_fallback(filepath, page_range, image_dpi, min_pdf_image_dim)
+
     doc.init_forms()
 
     images = []
