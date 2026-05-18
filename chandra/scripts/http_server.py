@@ -5,6 +5,7 @@ Processes images and PDFs and returns OCR results as JSON.
 import io
 import logging
 import os
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -33,7 +34,6 @@ logger = logging.getLogger(__name__)
 # Ensure logs are flushed immediately to prevent buffering issues that can
 # make debugging difficult (especially in containerized environments).
 # The hasattr checks handle Python versions that don't support reconfigure.
-import sys
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(line_buffering=True)
 if hasattr(sys.stderr, 'reconfigure'):
