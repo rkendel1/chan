@@ -30,7 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Ensure logs are flushed immediately
+# Ensure logs are flushed immediately to prevent buffering issues that can
+# make debugging difficult (especially in containerized environments).
+# The hasattr checks handle Python versions that don't support reconfigure.
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(line_buffering=True)
@@ -56,14 +58,14 @@ class InferenceTimeoutError(Exception):
     pass
 
 
-def run_inference_with_timeout(model, batch, timeout_seconds=600, **kwargs):
+def run_inference_with_timeout(model, batch, timeout_seconds=DEFAULT_INFERENCE_TIMEOUT, **kwargs):
     """
     Run model inference with a timeout.
     
     Args:
         model: The InferenceManager instance
         batch: Batch of items to process
-        timeout_seconds: Maximum time to wait (default 10 minutes)
+        timeout_seconds: Maximum time to wait (default from DEFAULT_INFERENCE_TIMEOUT constant)
         **kwargs: Additional arguments for generate()
     
     Returns:

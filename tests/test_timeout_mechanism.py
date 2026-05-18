@@ -13,6 +13,9 @@ class InferenceTimeoutError(Exception):
     pass
 
 
+# Note: This function is duplicated from http_server.py to make the test
+# standalone and not require Flask or other HTTP server dependencies.
+# Keep this in sync with the main implementation when making changes.
 def run_inference_with_timeout(model, batch, timeout_seconds=600, **kwargs):
     """
     Run model inference with a timeout.
