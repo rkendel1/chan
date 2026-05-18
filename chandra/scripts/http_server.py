@@ -5,6 +5,7 @@ Processes images and PDFs and returns OCR results as JSON.
 import io
 import logging
 import os
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -23,12 +24,25 @@ _script_dir = Path(__file__).parent
 app = Flask(__name__, template_folder=str(_script_dir / 'templates'))
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+    force=True
+)
 logger = logging.getLogger(__name__)
+
+# Ensure logs are flushed immediately to prevent buffering issues that can
+# make debugging difficult (especially in containerized environments).
+# The hasattr checks handle Python versions that don't support reconfigure.
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(line_buffering=True)
 
 # Configure upload settings
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp'}
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
+DEFAULT_INFERENCE_TIMEOUT = 600  # 10 minutes default timeout
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
@@ -36,6 +50,57 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 model: Optional[InferenceManager] = None
 model_lock = threading.Lock()
 model_initializing = False  # Track if model is currently initializing
+
+
+# Timeout exception for inference
+class InferenceTimeoutError(Exception):
+    """Raised when inference takes too long."""
+    pass
+
+
+def run_inference_with_timeout(model, batch, timeout_seconds=DEFAULT_INFERENCE_TIMEOUT, **kwargs):
+    """
+    Run model inference with a timeout.
+    
+    Args:
+        model: The InferenceManager instance
+        batch: Batch of items to process
+        timeout_seconds: Maximum time to wait (default from DEFAULT_INFERENCE_TIMEOUT constant)
+        **kwargs: Additional arguments for generate()
+    
+    Returns:
+        Results from model.generate()
+    
+    Raises:
+        InferenceTimeoutError: If inference takes longer than timeout_seconds
+    """
+    result_container = {'results': None, 'error': None}
+    
+    def target():
+        try:
+            logger.info("Inference thread started")
+            result_container['results'] = model.generate(batch, **kwargs)
+            logger.info(f"Inference thread completed with {len(result_container['results'])} results")
+        except Exception as e:
+            logger.error(f"Inference thread encountered error: {str(e)}", exc_info=True)
+            result_container['error'] = e
+    
+    thread = threading.Thread(target=target)
+    # Use daemon=True so the thread doesn't prevent process shutdown if it hangs.
+    # This is acceptable because the HTTP request will timeout and return an error,
+    # and any incomplete inference work can be safely discarded.
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+    
+    if thread.is_alive():
+        logger.error(f"Inference timed out after {timeout_seconds} seconds")
+        raise InferenceTimeoutError(f"Inference took longer than {timeout_seconds} seconds")
+    
+    if result_container['error'] is not None:
+        raise result_container['error']
+    
+    return result_container['results']
 
 
 def allowed_file(filename: str) -> bool:
@@ -190,12 +255,33 @@ def process_file():
         
         # Run inference
         logger.info(f"Starting inference on {len(batch)} page(s)")
-        results = model.generate(batch, **generate_kwargs)
-        logger.info(f"Inference completed successfully, got {len(results)} result(s)")
+        try:
+            # Use timeout wrapper to prevent hanging
+            try:
+                inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', DEFAULT_INFERENCE_TIMEOUT))
+            except (ValueError, TypeError) as e:
+                invalid_value = os.environ.get('INFERENCE_TIMEOUT', 'not set')
+                logger.warning(f"Invalid INFERENCE_TIMEOUT value '{invalid_value}': {e}. Using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
+                inference_timeout = DEFAULT_INFERENCE_TIMEOUT
+            
+            logger.info(f"Using inference timeout of {inference_timeout} seconds")
+            results = run_inference_with_timeout(model, batch, timeout_seconds=inference_timeout, **generate_kwargs)
+            logger.info(f"Inference completed successfully, got {len(results)} result(s)")
+        except InferenceTimeoutError as e:
+            logger.error(f"Inference timed out: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'Processing timed out after {inference_timeout} seconds. This may be due to document complexity, size, or system resource constraints. Try reducing the document size or increasing the timeout via INFERENCE_TIMEOUT environment variable.'
+            }), 504
+        except Exception as e:
+            logger.error(f"Inference failed: {str(e)}", exc_info=True)
+            raise  # Re-raise to be caught by outer exception handler
         
         # Format response
+        logger.info("Formatting response...")
         pages = []
         for page_num, result in enumerate(results):
+            logger.debug(f"Formatting page {page_num}")
             page_data = {
                 'page_num': page_num,
                 'markdown': result.markdown,
@@ -212,6 +298,7 @@ def process_file():
             
             pages.append(page_data)
         
+        logger.info(f"Formatted {len(pages)} page(s)")
         response = {
             'success': True,
             'filename': secure_filename(file.filename),
@@ -219,7 +306,7 @@ def process_file():
             'pages': pages
         }
         
-        logger.info(f"Successfully processed {file.filename}")
+        logger.info(f"Successfully processed {file.filename}, returning response")
         return jsonify(response)
     
     except Exception as e:
