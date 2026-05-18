@@ -392,9 +392,9 @@ def process_file():
                     'error': f'Processing failed on page {page_idx + 1}: {str(e)}'
                 }), 500
             finally:
-                if page_item and hasattr(page_item.image, 'close'):
+                if page_item is not None and hasattr(page_item.image, 'close'):
                     page_item.image.close()
-                if not lazy_pdf_page_loading and images:
+                if not lazy_pdf_page_loading and page_idx < len(images):
                     images[page_idx] = None
         
         logger.info(f"All {len(results)} page(s) processed successfully")
