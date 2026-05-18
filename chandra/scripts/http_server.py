@@ -210,9 +210,9 @@ def initialize_model(method: str = None):
     # If we set the flag, do the initialization outside the lock
     if model_initializing and model is None:
         try:
-            # Get method from environment or default to vllm
+            # Get method from environment or default to hf (CPU-friendly)
             if method is None:
-                method = os.environ.get('INFERENCE_METHOD', 'vllm')
+                method = os.environ.get('INFERENCE_METHOD', 'hf')
             logger.info(f"Initializing model with method: {method}")
             temp_model = InferenceManager(method=method)
             
@@ -527,7 +527,7 @@ def main():
     host = os.environ.get('HTTP_HOST', '0.0.0.0')
     port = int(os.environ.get('HTTP_PORT', '5000'))
     debug = os.environ.get('HTTP_DEBUG', 'false').lower() == 'true'
-    method = os.environ.get('INFERENCE_METHOD', 'vllm')
+    method = os.environ.get('INFERENCE_METHOD', 'hf')
     
     # Initialize model before starting server
     logger.info("Starting Chandra OCR HTTP Server...")
