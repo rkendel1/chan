@@ -46,6 +46,7 @@ MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
 DEFAULT_INFERENCE_TIMEOUT = 600  # 10 minutes default timeout
 MEMORY_PRESSURE_ABORT_THRESHOLD = 0.90  # Abort request if RSS exceeds 90% of container memory limit
 EFFECTIVELY_UNLIMITED_MEMORY_BYTES = 1 << 60  # 1 EiB; used to treat cgroup pseudo-unlimited values as "no cap"
+MIN_AVAILABLE_MEMORY_BYTES = 2 * 1024 * 1024 * 1024  # Abort when less than 2GB RAM is available
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
@@ -371,6 +372,23 @@ def process_file():
                         'success': False,
                         'error': (
                             'Server memory is critically high before processing begins. '
+                            'Try a smaller document/page range or increase container memory.'
+                        )
+                    }), 507
+            else:
+                virtual_mem = psutil.virtual_memory()
+                logger.info(
+                    f"System memory available before inference: {virtual_mem.available / 1024 / 1024:.1f}MB"
+                )
+                if virtual_mem.available <= MIN_AVAILABLE_MEMORY_BYTES:
+                    logger.error(
+                        f"Aborting processing due to low available memory "
+                        f"({virtual_mem.available / 1024 / 1024:.1f}MB <= {MIN_AVAILABLE_MEMORY_BYTES / 1024 / 1024:.1f}MB)"
+                    )
+                    return jsonify({
+                        'success': False,
+                        'error': (
+                            'Server memory is critically low before processing begins. '
                             'Try a smaller document/page range or increase container memory.'
                         )
                     }), 507

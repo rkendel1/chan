@@ -170,3 +170,72 @@ def test_process_continues_when_memory_pressure_is_below_threshold(monkeypatch):
     payload = response.get_json()
     assert payload["success"] is True
     assert mock_model.generate.call_count == 1
+
+
+def test_process_aborts_when_available_memory_is_too_low_without_cgroup_limit(monkeypatch):
+    app = http_server.app
+    client = app.test_client()
+
+    mock_model = Mock()
+    mock_model.generate = Mock(return_value=[_mock_batch_output(0)])
+    monkeypatch.setattr(http_server, "model", mock_model)
+    monkeypatch.setattr(http_server, "model_initializing", False)
+    monkeypatch.setattr(http_server, "get_memory_limit_bytes", lambda: None)
+
+    fake_process = Mock()
+    fake_process.memory_info.return_value = SimpleNamespace(rss=100, vms=1200)
+    fake_virtual_memory = SimpleNamespace(available=100, total=1000)
+    fake_psutil = SimpleNamespace(Process=lambda: fake_process, virtual_memory=lambda: fake_virtual_memory)
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    monkeypatch.setattr(
+        http_server,
+        "load_file",
+        lambda *_: [Image.new("RGB", (100, 100), "white")],
+    )
+
+    response = client.post(
+        "/process",
+        data={"file": (BytesIO(b"mock image"), "sample.png")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 507
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert "memory is critically low" in payload["error"]
+    assert mock_model.generate.call_count == 0
+
+
+def test_process_continues_when_available_memory_is_sufficient_without_cgroup_limit(monkeypatch):
+    app = http_server.app
+    client = app.test_client()
+
+    mock_model = Mock()
+    mock_model.generate = Mock(return_value=[_mock_batch_output(0)])
+    monkeypatch.setattr(http_server, "model", mock_model)
+    monkeypatch.setattr(http_server, "model_initializing", False)
+    monkeypatch.setattr(http_server, "get_memory_limit_bytes", lambda: None)
+
+    fake_process = Mock()
+    fake_process.memory_info.return_value = SimpleNamespace(rss=100, vms=1200)
+    fake_virtual_memory = SimpleNamespace(available=http_server.MIN_AVAILABLE_MEMORY_BYTES + 1, total=1000)
+    fake_psutil = SimpleNamespace(Process=lambda: fake_process, virtual_memory=lambda: fake_virtual_memory)
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    monkeypatch.setattr(
+        http_server,
+        "load_file",
+        lambda *_: [Image.new("RGB", (100, 100), "white")],
+    )
+
+    response = client.post(
+        "/process",
+        data={"file": (BytesIO(b"mock image"), "sample.png")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert mock_model.generate.call_count == 1
