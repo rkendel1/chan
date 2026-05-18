@@ -26,12 +26,12 @@ def test_main_uses_hf_when_inference_method_is_not_set(monkeypatch):
     monkeypatch.setattr(
         http_server,
         "initialize_model",
-        lambda method: captured.setdefault("method", method),
+        lambda method: captured.__setitem__("method", method),
     )
     monkeypatch.setattr(
         http_server.app,
         "run",
-        lambda **kwargs: captured.setdefault("run_kwargs", kwargs),
+        lambda **kwargs: captured.__setitem__("run_kwargs", kwargs),
     )
 
     http_server.main()
