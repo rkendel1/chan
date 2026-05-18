@@ -397,7 +397,7 @@ def process_file():
                 # virtual and resident memory exceeds what the OS has available,
                 # the OOM killer will terminate the process mid-inference.
                 unmapped_bytes = max(0, mem_info.vms - mem_info.rss)
-                if unmapped_bytes > 0 and virtual_mem.available < unmapped_bytes:
+                if virtual_mem.available < unmapped_bytes:
                     logger.error(
                         f"Aborting processing: not enough available memory to load model weights into RAM. "
                         f"VMS={mem_info.vms / 1024 / 1024:.1f}MB, RSS={mem_info.rss / 1024 / 1024:.1f}MB, "
