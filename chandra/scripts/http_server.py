@@ -80,6 +80,15 @@ def process_file():
     Returns:
         JSON response with OCR results for all pages
     """
+    logger.info("Received request to /process endpoint")
+    
+    # Check if model is initialized
+    if model is None:
+        logger.error("Model not initialized")
+        return jsonify({
+            'error': 'Model not initialized. Server may still be starting up.'
+        }), 503
+    
     # Check if file is present
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -93,6 +102,8 @@ def process_file():
         return jsonify({
             'error': f'File type not allowed. Supported types: {", ".join(ALLOWED_EXTENSIONS)}'
         }), 400
+    
+    logger.info(f"Processing file: {file.filename}")
     
     try:
         # Get optional parameters
