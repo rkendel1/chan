@@ -620,7 +620,7 @@
                 }, 1000);
 
             } catch (error) {
-                if (error instanceof TypeError && error.message === 'Failed to fetch') {
+                if (error instanceof TypeError) {
                     showError('Request failed to reach the server. Verify the container is running and check server logs.');
                 } else {
                     showError(error.message);
