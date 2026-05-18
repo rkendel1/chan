@@ -6,10 +6,15 @@ The repository has been successfully prepared for Docker deployment with HTTP fi
 
 ## 🚀 What You Can Do Now
 
-1. **Build the Docker images** (one-time, 15-25 minutes):
+1. **Build the Docker images** (one-time, 15-25 minutes, requires 40GB+ free disk space):
    ```bash
+   # Check disk space first
+   df -h
+   
    docker-compose build
    ```
+   
+   > **⚠️ Disk Space:** If you see "no space left on device" errors, run `docker system prune -a -f` to clean up. See [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md) for details.
 
 2. **Start the services** (2-3 minutes):
    ```bash
