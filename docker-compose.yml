@@ -17,7 +17,7 @@ services:
       - INFERENCE_METHOD=hf
       - HTTP_HOST=0.0.0.0
       - HTTP_PORT=5000
-    restart: unless-stopped
+    restart: on-failure:3  # Retry up to 3 times on crashes, then stop to prevent infinite restart loop
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
@@ -52,7 +52,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    restart: unless-stopped
+    restart: on-failure:3  # Retry up to 3 times on crashes, then stop to prevent infinite restart loop
     profiles:
       - gpu
     healthcheck:
@@ -81,7 +81,7 @@ services:
     depends_on:
       vllm-server:
         condition: service_healthy
-    restart: unless-stopped
+    restart: on-failure:3  # Retry up to 3 times on crashes, then stop to prevent infinite restart loop
     profiles:
       - gpu
     # Model is pre-cached in the image - no download needed
