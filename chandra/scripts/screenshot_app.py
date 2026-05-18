@@ -62,7 +62,7 @@ def index():
 def process():
     data = request.json
     file_path = data.get("file_path")
-    page_number = data.get("page_number", 0)
+    page_number = data.get("page_number", 1)
 
     if not file_path:
         return jsonify({"error": "file_path is required"}), 400
