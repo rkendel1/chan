@@ -483,6 +483,7 @@
     <script>
         let selectedFile = null;
         let lastResults = null;
+        let modelReady = false;  // Track if model is ready
 
         // Tab switching
         function switchTab(tabName) {
@@ -548,7 +549,8 @@
             selectedFile = file;
             fileName.textContent = file.name;
             fileInfo.classList.add('show');
-            processBtn.disabled = false;
+            // Only enable button if model is ready
+            processBtn.disabled = !modelReady;
             
             // Clear previous messages
             document.getElementById('error').classList.remove('show');
@@ -614,7 +616,8 @@
                 showError(error.message);
             } finally {
                 document.getElementById('processing').classList.remove('show');
-                processBtn.disabled = false;
+                // Only re-enable if we have a file and model is ready
+                processBtn.disabled = !(selectedFile && modelReady);
             }
         }
 
@@ -720,6 +723,7 @@
                 if (data.model_initializing) {
                     showError('Server is still initializing. Please wait a moment before processing documents.');
                     processBtn.disabled = true;
+                    modelReady = false;
                     
                     // Check again after 5 seconds
                     setTimeout(async () => {
@@ -727,13 +731,18 @@
                         const retryData = await retry.json();
                         if (retryData.model_loaded && !retryData.model_initializing) {
                             showSuccess('Server is ready!');
+                            modelReady = true;
                             // Re-enable button only if we have a file
                             processBtn.disabled = !selectedFile;
                         }
                     }, 5000);
+                } else if (data.model_loaded) {
+                    // Model is already ready
+                    modelReady = true;
                 }
             } catch (error) {
                 showError('Unable to connect to server');
+                modelReady = false;
             }
         });
     </script>
