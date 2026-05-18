@@ -76,6 +76,7 @@ Deploy Chandra as an HTTP API service that accepts file uploads:
 
 ```shell
 # Build image (downloads model during build, 15-25 min first time)
+# Requires 40GB+ free disk space
 docker-compose build
 
 # Start service (CPU mode by default, no GPU required)
@@ -93,6 +94,8 @@ curl -X POST http://localhost:5000/process \
   -F "file=@image.png" \
   | python -m json.tool
 ```
+
+> **⚠️ DISK SPACE:** Building requires 40GB+ free disk space. If you see "no space left on device" errors, run `docker system prune -a -f` to clean up. See [DOCKER_DISK_SPACE.md](DOCKER_DISK_SPACE.md) for details.
 
 **Playground UI:** The service includes an interactive web interface at `/playground` with drag-and-drop file upload, configurable processing options, and visual results display.
 
