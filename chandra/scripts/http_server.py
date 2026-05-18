@@ -5,6 +5,7 @@ Processes images and PDFs and returns OCR results as JSON.
 import io
 import logging
 import os
+import signal
 import sys
 import tempfile
 import threading
@@ -52,6 +53,28 @@ model_lock = threading.Lock()
 model_initializing = False  # Track if model is currently initializing
 
 
+# Signal handler to log crashes before exit
+def signal_handler(signum, frame):
+    """Handle termination signals and log them before exiting."""
+    signal_names = {
+        signal.SIGTERM: 'SIGTERM',
+        signal.SIGINT: 'SIGINT',
+    }
+    if hasattr(signal, 'SIGQUIT'):
+        signal_names[signal.SIGQUIT] = 'SIGQUIT'
+    
+    signal_name = signal_names.get(signum, str(signum))
+    logger.error(f"Received signal {signal_name}, shutting down gracefully...")
+    sys.exit(0)
+
+
+# Register signal handlers
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+if hasattr(signal, 'SIGQUIT'):
+    signal.signal(signal.SIGQUIT, signal_handler)
+
+
 # Timeout exception for inference
 class InferenceTimeoutError(Exception):
     """Raised when inference takes too long."""
@@ -79,13 +102,28 @@ def run_inference_with_timeout(model, batch, timeout_seconds=DEFAULT_INFERENCE_T
     def target():
         try:
             logger.info("Inference thread started")
+            # Flush logs immediately in case of crash
+            sys.stdout.flush()
+            sys.stderr.flush()
+            
             result_container['results'] = model.generate(batch, **kwargs)
+            
             logger.info(f"Inference thread completed with {len(result_container['results'])} results")
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except KeyboardInterrupt:
+            logger.warning("Inference thread interrupted by user")
+            result_container['error'] = Exception("Inference interrupted by user")
+        except MemoryError as e:
+            logger.error(f"Inference thread ran out of memory: {str(e)}", exc_info=True)
+            result_container['error'] = e
         except Exception as e:
             logger.error(f"Inference thread encountered error: {str(e)}", exc_info=True)
+            sys.stdout.flush()
+            sys.stderr.flush()
             result_container['error'] = e
     
-    thread = threading.Thread(target=target)
+    thread = threading.Thread(target=target, name="InferenceThread")
     # Use daemon=True so the thread doesn't prevent process shutdown if it hangs.
     # This is acceptable because the HTTP request will timeout and return an error,
     # and any incomplete inference work can be safely discarded.
@@ -95,6 +133,9 @@ def run_inference_with_timeout(model, batch, timeout_seconds=DEFAULT_INFERENCE_T
     
     if thread.is_alive():
         logger.error(f"Inference timed out after {timeout_seconds} seconds")
+        # Flush logs before raising timeout
+        sys.stdout.flush()
+        sys.stderr.flush()
         raise InferenceTimeoutError(f"Inference took longer than {timeout_seconds} seconds")
     
     if result_container['error'] is not None:
@@ -253,29 +294,71 @@ def process_file():
         if max_output_tokens is not None:
             generate_kwargs['max_output_tokens'] = max_output_tokens
         
+        # Log memory info before inference to help debug OOM issues
+        try:
+            import psutil
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            logger.info(f"Memory usage before inference: RSS={mem_info.rss / 1024 / 1024:.1f}MB, VMS={mem_info.vms / 1024 / 1024:.1f}MB")
+        except ImportError:
+            pass  # psutil not available, skip memory logging
+        except Exception as e:
+            logger.debug(f"Could not get memory info: {e}")
+        
         # Run inference
         logger.info(f"Starting inference on {len(batch)} page(s)")
-        try:
-            # Use timeout wrapper to prevent hanging
+        
+        # For large batches, warn about potential memory issues
+        if len(batch) > 10:
+            logger.warning(f"Processing {len(batch)} pages in one request may cause memory issues. Consider using page_range to process fewer pages at once.")
+        
+        # Process pages individually to avoid OOM crashes with large batches
+        # This is safer than batch processing which can crash the entire server
+        results = []
+        for page_idx, page_item in enumerate(batch):
             try:
-                inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', DEFAULT_INFERENCE_TIMEOUT))
-            except (ValueError, TypeError) as e:
-                invalid_value = os.environ.get('INFERENCE_TIMEOUT', 'not set')
-                logger.warning(f"Invalid INFERENCE_TIMEOUT value '{invalid_value}': {e}. Using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
-                inference_timeout = DEFAULT_INFERENCE_TIMEOUT
-            
-            logger.info(f"Using inference timeout of {inference_timeout} seconds")
-            results = run_inference_with_timeout(model, batch, timeout_seconds=inference_timeout, **generate_kwargs)
-            logger.info(f"Inference completed successfully, got {len(results)} result(s)")
-        except InferenceTimeoutError as e:
-            logger.error(f"Inference timed out: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': f'Processing timed out after {inference_timeout} seconds. This may be due to document complexity, size, or system resource constraints. Try reducing the document size or increasing the timeout via INFERENCE_TIMEOUT environment variable.'
-            }), 504
-        except Exception as e:
-            logger.error(f"Inference failed: {str(e)}", exc_info=True)
-            raise  # Re-raise to be caught by outer exception handler
+                # Use timeout wrapper to prevent hanging
+                try:
+                    inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', DEFAULT_INFERENCE_TIMEOUT))
+                except (ValueError, TypeError) as e:
+                    invalid_value = os.environ.get('INFERENCE_TIMEOUT', 'not set')
+                    logger.warning(f"Invalid INFERENCE_TIMEOUT value '{invalid_value}': {e}. Using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
+                    inference_timeout = DEFAULT_INFERENCE_TIMEOUT
+                
+                logger.info(f"Processing page {page_idx + 1}/{len(batch)}")
+                sys.stdout.flush()
+                sys.stderr.flush()
+                
+                page_results = run_inference_with_timeout(model, [page_item], timeout_seconds=inference_timeout, **generate_kwargs)
+                results.extend(page_results)
+                logger.info(f"Page {page_idx + 1}/{len(batch)} completed successfully")
+            except InferenceTimeoutError as e:
+                logger.error(f"Page {page_idx + 1} timed out: {str(e)}")
+                sys.stdout.flush()
+                sys.stderr.flush()
+                return jsonify({
+                    'success': False,
+                    'error': f'Processing timed out on page {page_idx + 1} after {inference_timeout} seconds. This may be due to document complexity, size, or system resource constraints. Try reducing the document size or increasing the timeout via INFERENCE_TIMEOUT environment variable.'
+                }), 504
+            except MemoryError as e:
+                logger.error(f"Page {page_idx + 1} failed due to memory error: {str(e)}", exc_info=True)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                return jsonify({
+                    'success': False,
+                    'error': f'Processing failed on page {page_idx + 1} due to insufficient memory. Try processing fewer pages at once using the page_range parameter.'
+                }), 507  # HTTP 507 Insufficient Storage
+            except Exception as e:
+                logger.error(f"Page {page_idx + 1} failed: {str(e)}", exc_info=True)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                # Return error response instead of re-raising to prevent crash
+                return jsonify({
+                    'success': False,
+                    'error': f'Processing failed on page {page_idx + 1}: {str(e)}'
+                }), 500
+        
+        logger.info(f"All {len(results)} page(s) processed successfully")
         
         # Format response
         logger.info("Formatting response...")

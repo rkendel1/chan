@@ -16,6 +16,7 @@ dependencies = [
     "markdownify==1.1.0",
     "openai>=2.2.0",
     "pillow>=10.2.0",
+    "psutil>=5.9.0",
     "pydantic>=2.12.0",
     "pydantic-settings>=2.11.0",
     "pypdfium2>=4.30.0",
