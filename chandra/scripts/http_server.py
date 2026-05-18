@@ -40,6 +40,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 # Configure upload settings
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp'}
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
+DEFAULT_INFERENCE_TIMEOUT = 600  # 10 minutes default timeout
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
@@ -83,6 +84,9 @@ def run_inference_with_timeout(model, batch, timeout_seconds=600, **kwargs):
             result_container['error'] = e
     
     thread = threading.Thread(target=target)
+    # Use daemon=True so the thread doesn't prevent process shutdown if it hangs.
+    # This is acceptable because the HTTP request will timeout and return an error,
+    # and any incomplete inference work can be safely discarded.
     thread.daemon = True
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -252,10 +256,10 @@ def process_file():
         try:
             # Use timeout wrapper to prevent hanging
             try:
-                inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', 600))  # Default 10 minutes
+                inference_timeout = int(os.environ.get('INFERENCE_TIMEOUT', DEFAULT_INFERENCE_TIMEOUT))
             except (ValueError, TypeError):
-                logger.warning("Invalid INFERENCE_TIMEOUT value, using default of 600 seconds")
-                inference_timeout = 600
+                logger.warning(f"Invalid INFERENCE_TIMEOUT value, using default of {DEFAULT_INFERENCE_TIMEOUT} seconds")
+                inference_timeout = DEFAULT_INFERENCE_TIMEOUT
             
             logger.info(f"Using inference timeout of {inference_timeout} seconds")
             results = run_inference_with_timeout(model, batch, timeout_seconds=inference_timeout, **generate_kwargs)

@@ -41,6 +41,9 @@ def run_inference_with_timeout(model, batch, timeout_seconds=600, **kwargs):
             result_container['error'] = e
     
     thread = threading.Thread(target=target)
+    # Use daemon=True so the thread doesn't prevent process shutdown if it hangs.
+    # This is acceptable because the HTTP request will timeout and return an error,
+    # and any incomplete inference work can be safely discarded.
     thread.daemon = True
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -84,7 +87,8 @@ def test_timeout_mechanism():
         elapsed = time.time() - start
         print(f"✓ PASSED: Correctly timed out after {elapsed:.1f} seconds")
         print(f"  Error message: {str(e)}")
-        # Allow some tolerance for thread scheduling and system load
+        # Allow wide tolerance (1.5-4.0s) for thread scheduling delays on CI systems
+        # and under heavy load. The key is that it times out, not the exact timing.
         if elapsed < 1.5 or elapsed > 4.0:
             print(f"✗ FAILED: Timeout took {elapsed:.1f}s, expected ~2s (allowed 1.5-4.0s)")
             return False
