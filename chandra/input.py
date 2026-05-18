@@ -87,14 +87,20 @@ def load_pdf_images(
 
 
 def parse_range_str(range_str: str) -> List[int]:
+    """Parse a 1-based page range string into a sorted list of 0-based page indices.
+
+    Users specify pages with 1-based numbering (e.g. '1-5,7,9-12' means the first
+    five pages, the seventh page, and pages nine through twelve).  Internally pages
+    are addressed with 0-based indices, so each number is decremented by one.
+    """
     range_lst = range_str.split(",")
     page_lst = []
     for i in range_lst:
         if "-" in i:
             start, end = i.split("-")
-            page_lst += list(range(int(start), int(end) + 1))
+            page_lst += list(range(int(start) - 1, int(end)))
         else:
-            page_lst.append(int(i))
+            page_lst.append(int(i) - 1)
     page_lst = sorted(list(set(page_lst)))  # Deduplicate page numbers and sort in order
     return page_lst
 

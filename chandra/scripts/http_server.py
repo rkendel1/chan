@@ -392,6 +392,25 @@ def process_file():
                             'Try a smaller document/page range or increase container memory.'
                         )
                     }), 507
+                # Model weights may be memory-mapped (VMS >> RSS) and will be
+                # paged into physical RAM during inference. If the gap between
+                # virtual and resident memory exceeds what the OS has available,
+                # the OOM killer will terminate the process mid-inference.
+                unmapped_bytes = max(0, mem_info.vms - mem_info.rss)
+                if unmapped_bytes > 0 and virtual_mem.available < unmapped_bytes:
+                    logger.error(
+                        f"Aborting processing: not enough available memory to load model weights into RAM. "
+                        f"VMS={mem_info.vms / 1024 / 1024:.1f}MB, RSS={mem_info.rss / 1024 / 1024:.1f}MB, "
+                        f"estimated additional needed={unmapped_bytes / 1024 / 1024:.1f}MB, "
+                        f"available={virtual_mem.available / 1024 / 1024:.1f}MB"
+                    )
+                    return jsonify({
+                        'success': False,
+                        'error': (
+                            'Not enough system memory to run inference: the model requires more RAM than is currently '
+                            'available. Increase the container or host memory limit and try again.'
+                        )
+                    }), 507
         except ImportError:
             pass  # psutil not available, skip memory logging
         except Exception as e:
@@ -410,7 +429,7 @@ def process_file():
             page_item = None
             try:
                 if lazy_pdf_page_loading:
-                    page_images = load_file(tmp_filepath, {'page_range': str(page_idx)})
+                    page_images = load_file(tmp_filepath, {'page_range': str(page_idx + 1)})
                     if not page_images:
                         raise ValueError(f"No image found for page index {page_idx}")
                     page_item = BatchInputItem(image=page_images[0], prompt_type="ocr_layout")
