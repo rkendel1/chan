@@ -230,6 +230,7 @@ test_http_server.py
 test_response.json
 response.json
 validate_changes.py
+PR_SUMMARY.md
 
 # Docker volumes
 models/
