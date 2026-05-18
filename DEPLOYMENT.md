@@ -36,6 +36,9 @@ In addition to the above:
 This is the recommended mode if you don't have a GPU or encounter GPU driver errors:
 
 ```bash
+# Check disk space first (recommended)
+./check_disk_space.sh
+
 # Build image (downloads model during build, takes 15-25 minutes first time)
 docker-compose build
 

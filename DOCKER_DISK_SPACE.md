@@ -31,7 +31,10 @@ no space left on device: /Users/randy/.z.11301
 ### 1. Check Current Disk Space
 
 ```bash
-# Check available disk space
+# Quick check with our helper script
+./check_disk_space.sh
+
+# Or manually check available disk space
 df -h
 
 # Look for your Docker data directory, usually:
