@@ -88,8 +88,9 @@ def test_process_pdf_uses_lazy_page_loading_without_page_range(monkeypatch):
     assert payload["success"] is True
     assert payload["num_pages"] == 3
     assert mock_model.generate.call_count == 3
-    # Verify 1-based page indices are passed to load_file so that page 1
-    # (the first page) is requested, not page 0 which would skip it.
+    # Verify 1-based page indices are passed to load_file. The old 0-based
+    # behaviour caused page_range '1' to load the second page instead of the
+    # first; with 1-based numbering, '1' correctly means the first page.
     assert load_calls == [
         {"page_range": "1"},
         {"page_range": "2"},
