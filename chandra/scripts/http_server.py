@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 
 from chandra.input import load_file
@@ -32,6 +32,7 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 # Global model instance with thread lock for initialization
 model: Optional[InferenceManager] = None
 model_lock = threading.Lock()
+model_initializing = False  # Track if model is currently initializing
 
 
 def allowed_file(filename: str) -> bool:
@@ -41,17 +42,21 @@ def allowed_file(filename: str) -> bool:
 
 def initialize_model(method: str = None):
     """Initialize the inference model with thread safety."""
-    global model
+    global model, model_initializing
     
     # Use lock to ensure thread-safe initialization
     with model_lock:
-        if model is None:
-            # Get method from environment or default to vllm
-            if method is None:
-                method = os.environ.get('INFERENCE_METHOD', 'vllm')
-            logger.info(f"Initializing model with method: {method}")
-            model = InferenceManager(method=method)
-            logger.info("Model initialized successfully")
+        if model is None and not model_initializing:
+            model_initializing = True
+            try:
+                # Get method from environment or default to vllm
+                if method is None:
+                    method = os.environ.get('INFERENCE_METHOD', 'vllm')
+                logger.info(f"Initializing model with method: {method}")
+                model = InferenceManager(method=method)
+                logger.info("Model initialized successfully")
+            finally:
+                model_initializing = False
     return model
 
 
@@ -60,7 +65,8 @@ def health():
     """Health check endpoint."""
     return jsonify({
         'status': 'healthy',
-        'model_loaded': model is not None
+        'model_loaded': model is not None,
+        'model_initializing': model_initializing
     })
 
 
@@ -82,12 +88,19 @@ def process_file():
     """
     logger.info("Received request to /process endpoint")
     
-    # Check if model is initialized
+    # Check if model is initialized or initializing
     if model is None:
-        logger.error("Model not initialized")
-        return jsonify({
-            'error': 'Model not initialized. Server may still be starting up.'
-        }), 503
+        if model_initializing:
+            logger.warning("Model is still initializing")
+            return jsonify({
+                'error': 'Model is still initializing. Please wait and try again in a few moments.',
+                'status': 'initializing'
+            }), 503
+        else:
+            logger.error("Model not initialized")
+            return jsonify({
+                'error': 'Model not initialized. Server may have failed to start properly.'
+            }), 503
     
     # Check if file is present
     if 'file' not in request.files:
@@ -204,11 +217,18 @@ def index():
         'endpoints': {
             '/health': 'GET - Health check',
             '/process': 'POST - Process document (multipart/form-data with file field)',
+            '/playground': 'GET - Interactive playground UI',
             '/': 'GET - API information'
         },
         'supported_formats': list(ALLOWED_EXTENSIONS),
         'max_file_size_mb': MAX_CONTENT_LENGTH / (1024 * 1024)
     })
+
+
+@app.route('/playground', methods=['GET'])
+def playground():
+    """Serve the interactive playground UI."""
+    return render_template('playground.html')
 
 
 def main():
