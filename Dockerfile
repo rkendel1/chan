@@ -51,7 +51,7 @@ EXPOSE 5000
 ENV PYTHONUNBUFFERED=1
 ENV HTTP_HOST=0.0.0.0
 ENV HTTP_PORT=5000
-ENV INFERENCE_METHOD=vllm
+ENV INFERENCE_METHOD=hf
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

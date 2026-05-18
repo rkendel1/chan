@@ -593,11 +593,18 @@
                     method: 'POST',
                     body: formData
                 });
-
-                const data = await response.json();
+                const contentType = response.headers.get('content-type') || '';
+                const data = contentType.includes('application/json')
+                    ? await response.json()
+                    : null;
 
                 if (!response.ok) {
-                    throw new Error(data.error || 'Processing failed');
+                    const serverError = data?.error;
+                    throw new Error(serverError || `Processing failed (HTTP ${response.status})`);
+                }
+
+                if (!data) {
+                    throw new Error('Server returned an unexpected response format');
                 }
 
                 // Store results
@@ -613,7 +620,11 @@
                 }, 1000);
 
             } catch (error) {
-                showError(error.message);
+                if (error instanceof TypeError) {
+                    showError('Request failed to reach the server. Verify the container is running and check server logs.');
+                } else {
+                    showError(error.message);
+                }
             } finally {
                 document.getElementById('processing').classList.remove('show');
                 // Only re-enable if we have a file and model is ready
