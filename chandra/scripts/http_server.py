@@ -44,7 +44,8 @@ if hasattr(sys.stderr, 'reconfigure'):
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tiff', '.bmp'}
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
 DEFAULT_INFERENCE_TIMEOUT = 600  # 10 minutes default timeout
-MEMORY_PRESSURE_ABORT_RATIO = 0.90  # Abort request if RSS exceeds 90% of container memory limit
+MEMORY_PRESSURE_ABORT_THRESHOLD = 0.90  # Abort request if RSS exceeds 90% of container memory limit
+EFFECTIVELY_UNLIMITED_MEMORY_BYTES = 1 << 60  # 1 EiB; used to treat cgroup pseudo-unlimited values as "no cap"
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
@@ -171,7 +172,12 @@ def get_pdf_page_count(filepath: str) -> int:
 
 
 def get_memory_limit_bytes() -> Optional[int]:
-    """Best-effort container memory limit detection (cgroup v2/v1)."""
+    """Best-effort container memory limit detection (cgroup v2/v1).
+
+    Returns:
+        int: Memory limit in bytes when a finite container limit is detected.
+        None: No finite limit could be determined (missing files or unlimited value).
+    """
     cgroup_files = (
         "/sys/fs/cgroup/memory.max",  # cgroup v2
         "/sys/fs/cgroup/memory/memory.limit_in_bytes",  # cgroup v1
@@ -183,10 +189,10 @@ def get_memory_limit_bytes() -> Optional[int]:
                 continue
             limit = int(raw_value)
             # Ignore invalid and effectively-unlimited values.
-            if limit <= 0 or limit >= (1 << 60):
+            if limit >= EFFECTIVELY_UNLIMITED_MEMORY_BYTES:
                 continue
             return limit
-        except Exception:
+        except (FileNotFoundError, PermissionError, ValueError, OSError):
             continue
     return None
 
@@ -350,16 +356,16 @@ def process_file():
             logger.info(f"Memory usage before inference: RSS={mem_info.rss / 1024 / 1024:.1f}MB, VMS={mem_info.vms / 1024 / 1024:.1f}MB")
 
             memory_limit = get_memory_limit_bytes()
-            if memory_limit:
+            if memory_limit and memory_limit > 0:
                 usage_ratio = mem_info.rss / memory_limit
                 logger.info(
                     f"Container memory limit: {memory_limit / 1024 / 1024:.1f}MB, "
                     f"current RSS ratio: {usage_ratio:.1%}"
                 )
-                if usage_ratio >= MEMORY_PRESSURE_ABORT_RATIO:
+                if usage_ratio >= MEMORY_PRESSURE_ABORT_THRESHOLD:
                     logger.error(
                         f"Aborting processing due to high memory pressure "
-                        f"(RSS ratio {usage_ratio:.1%} >= {MEMORY_PRESSURE_ABORT_RATIO:.0%})"
+                        f"(RSS ratio {usage_ratio:.0%} >= {MEMORY_PRESSURE_ABORT_THRESHOLD:.0%})"
                     )
                     return jsonify({
                         'success': False,
