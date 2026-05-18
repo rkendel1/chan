@@ -87,6 +87,7 @@ def load_model():
     kwargs = {
         "dtype": torch.bfloat16,
         "device_map": device_map,
+        "local_files_only": True,  # Use cached model without external API calls
     }
     if settings.TORCH_ATTN:
         kwargs["attn_implementation"] = settings.TORCH_ATTN
@@ -95,7 +96,10 @@ def load_model():
         settings.MODEL_CHECKPOINT, **kwargs
     )
     model = model.eval()
-    processor = AutoProcessor.from_pretrained(settings.MODEL_CHECKPOINT)
+    processor = AutoProcessor.from_pretrained(
+        settings.MODEL_CHECKPOINT,
+        local_files_only=True  # Use cached processor without external API calls
+    )
     processor.tokenizer.padding_side = "left"
     model.processor = processor
     return model
